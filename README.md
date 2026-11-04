@@ -15,6 +15,8 @@ personal overrides.
   fails. A failure stays on screen and posts a notification.
 - Spaces that arrive with something already in them (a briefed agent) are
   never rearranged: `wool` only adds a "Setup" tab behind them.
+- Nothing from a repo's config runs until you've trusted **its exact
+  contents**. See [Trust](#trust).
 
 ## Installation
 
@@ -195,6 +197,71 @@ focus. Remote spaces (on another machine) are skipped in this version.
 A worktree you make with `git worktree add` in a terminal and then open with
 "Open worktree" within 3 minutes counts as new. That's on purpose.
 
+## Trust
+
+A committed `.herdr/wool.yml.dist` runs commands as you. So the first time a
+new worktree would run something from a file wool hasn't seen, wool runs
+nothing and adds one tab, `wool`, that shows the repo, the file, its SHA-256
+checksum and its full contents, and asks:
+
+```
+[d]ecline  trust [o]nce  [t]rust project:
+```
+
+- **Decline** (`d`): wool does nothing for this worktree, and won't ask about
+  this exact file again (later worktrees with it get nothing, silently).
+- **Trust once** (`o`): wool sets up this worktree as usual. Nothing is saved;
+  the next worktree asks again.
+- **Trust project** (`t`): wool sets up this worktree, and remembers the
+  file's checksum for this repo. Later worktrees with the same file run
+  without asking.
+
+Until you answer, nothing from the file runs: no setup, no layout, no agent,
+no background command. The space's own tab stays usable. In a plain-shell
+space the `wool` tab has the keyboard; in any other space (a briefed agent) it
+doesn't, and a warning notification ("wool: trust needed for <repo>") takes
+you there. Closing the tab or pressing Ctrl-C counts as no answer: nothing is
+saved and nothing runs.
+
+What's gated:
+
+| The file wool uses | Asks? |
+|---|---|
+| a `wool.yml` that git ignores | no: you wrote it, it's trusted |
+| a `wool.yml` that git doesn't ignore (committed, or not in `.gitignore`) | yes |
+| any `wool.yml.dist` | yes |
+
+A changed file (a pull brings a new `.dist`, a branch edits it) has a new
+checksum, so the next worktree asks again. A repo can have several trusted
+versions at once (older branches keep theirs). A space that would run nothing
+from the file isn't asked about, and an invalid file is reported, never asked
+about.
+
+From a terminal:
+
+```sh
+sh ~/.config/herdr-app/mods/wool/bin/wool.sh list               # every trusted and declined file
+sh ~/.config/herdr-app/mods/wool/bin/wool.sh forget <folder>    # forget every decision for <folder>'s repo
+sh ~/.config/herdr-app/mods/wool/bin/wool.sh run <folder>       # set up that worktree again (asks again if needed)
+```
+
+`run` is the way back after declining (`forget`, then `run`), after closing
+the prompt without an answer, after wool restarted while a prompt was open,
+or to re-run setup. It needs the worktree's space open in Herdr, and never
+trusts anything by itself. There is deliberately **no `trust` command**:
+trusting takes an answer typed into wool's prompt, so a README, a task or an
+agent can't tell wool to trust something. Agents may use `list`, `forget` and
+`run`.
+
+Decisions are kept in `${XDG_CONFIG_HOME:-~/.config}/wool/trust.tsv`, one
+line each: checksum, `trusted`/`declined`, repo (main checkout), file, date.
+It's outside the mod folder, so reinstalling wool keeps it.
+
+**This stops the easy path, not a determined attacker.** Anything already
+running as you (a malicious `postinstall`, an agent) can edit that file or
+type into the prompt's terminal. The gate makes sure you see a repo's
+commands before they first run; it is not a sandbox.
+
 ## Environment variables
 
 Every setup step gets:
@@ -231,26 +298,30 @@ Every setup step gets:
 
 `wool` keeps its per-worktree state in the worktree's private git dir
 (`<repo>/.git/worktrees/<name>/wool/`): the claim, `setup.sh`, `status`,
-background logs. It never shows in `git status` and goes away with
-`git worktree remove`. Setup runs once per worktree. To run it again (this
-also updates `status`, so waiting commands follow it), in any terminal:
-`sh ~/.config/herdr-app/mods/wool/bin/wool-run.sh <that folder>`.
+background logs, and the copy of the config it checksummed (`config.yml`).
+It never shows in `git status` and goes away with `git worktree remove`.
+Setup runs once per worktree. To run wool for it again (through the trust
+gate, as for a new worktree), in any terminal:
+`sh ~/.config/herdr-app/mods/wool/bin/wool.sh run <that folder>`.
 - **Something goes wrong after `wool` claimed the worktree** (before setup
   started): a notification says what, and gives that same command.
+- **You declined, or closed the prompt:** an info notification says wool
+  skipped the worktree. See [Trust](#trust) to undo it.
 - **You typed into the new space's shell before `wool` laid it out:** if
   something is running there, `wool` keeps that tab and says so.
 
 ## Security and trust
 
 **A repo's `.herdr/wool.yml.dist` runs commands as you** when you create a
-worktree, with your environment and permissions. That's the same trust you
-give `composer` scripts or npm `postinstall`: only use wool with
-repos whose committed files you trust, and read `.herdr/` in a repo before
-making worktrees of it.
+worktree, with your environment and permissions. wool asks before a file it
+hasn't seen runs (see [Trust](#trust)), but once you trust a file, it's the
+same trust you give `composer` scripts or npm `postinstall`: read the file
+before you answer `t`.
 
 `wool` itself runs programs (`git`, `sh`, the setup steps, the commands in
 `wool.yml`) and reads files outside its own folder (`.herdr/` files in
-your repos, its state in their git dirs). It doesn't use the network.
+your repos, its state in their git dirs, its trust store in
+`~/.config/wool/`). It doesn't use the network.
 
 ## Development
 

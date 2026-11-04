@@ -5,7 +5,9 @@ once with the keyboard, a shell tab sits next to it, and a Server tab shows the
 repo's setup (`.env` copied, dependencies installed) scrolling by before it
 becomes the dev server. What runs and which tabs appear come from
 `.herdr/wool.yml.dist` committed in the repo (top-level `setup` steps and
-`tabs`), with a personal `wool.yml` override. wool itself never shows.
+`tabs`), with a personal `wool.yml` override. A config someone else could
+have written runs only after you've trusted its exact contents in a `wool`
+prompt tab. wool itself never shows.
 
 ![wool](preview.png)
 
@@ -21,12 +23,17 @@ becomes the dev server. What runs and which tabs appear come from
   tab named `Setup`) prints `==> <step name>` before each step, the steps' own
   output, then `wool: setup finished.` and the pane's command, or
   `wool: step '<name>' failed (exit N)` and a shell prompt.
+- **A `wool` tab**, when the space's config isn't trusted yet: repo, file,
+  SHA-256 and the file's contents (control characters stripped), then
+  `[d]ecline  trust [o]nce  [t]rust project:`. It closes once answered.
 - **Waiting panes** print `wool: waiting for setup...` until setup is done.
 - **Notifications** (the shipped toast): success "wool: <branch> is ready";
   error "wool: setup failed" / "Step '<name>' failed in <branch>." (click:
   focuses the setup pane); error "wool: .herdr/<file> is invalid" with the
   problem and full path; warning for an agent that isn't installed; error for
-  a background command that exited nonzero.
+  a background command that exited nonzero; warning "wool: trust needed for
+  <repo>" (click: focuses the prompt) when the prompt opened in a space wool
+  doesn't lay out; info "wool: skipped <branch>" after a decline or no answer.
 
 ## How it behaves
 
@@ -42,6 +49,19 @@ becomes the dev server. What runs and which tabs appear come from
 - Plain-shell space + `tabs` → layout + setup. Any other new worktree
   space → setup only, in an added `Setup` tab; focus goes back to the pane
   that had it. No `setup` and no layout → nothing.
+- Trust gate, after the claim and a valid config, only when something would
+  run: the text wool read is written to `<git-dir>/wool/config.yml` and
+  `wool.sh check` checksums it. A gitignored `wool.yml` is trusted; otherwise
+  a `trusted` entry for this repo + checksum runs, a `declined` one does
+  nothing silently, no entry opens the `wool` prompt tab. Plain-shell spaces:
+  the prompt has focus. Others: focus goes back, plus a warning notification.
+  wool polls `trust-answer` (`trust`/`once` → carry on; `decline`/`none` →
+  close the tab, info notification, nothing runs). A tab that vanishes
+  without an answer counts as `none` after 2 s.
+- `wool.sh run <folder>` drops a file in `~/.config/wool/requests/`; wool
+  watches that folder (`watchFolder` plus a 5 s timer), takes each request,
+  clears the worktree's `<git-dir>/wool` (unless setup is `running`), and
+  handles its open space as new, any age, through the gate.
 - Setup runs once. Ctrl-C in its pane or closing its terminal stops the
   running step (the whole process tree) and marks it failed (`interrupted`).
 - The space's original shell tab is closed only if its shell is still idle
@@ -71,7 +91,8 @@ becomes the dev server. What runs and which tabs appear come from
   main `wool.yml`, worktree `wool.yml`, worktree `wool.yml.dist`, main
   `wool.yml.dist`), `detect.js` (classification, claim parsing), `shell.js` (setup script,
   argv builders), `plan.js` (steps: `tab`, `split`, `background`,
-  `closeOriginal`, `focus`).
+  `closeOriginal`, `focus`), `trust.js` (`parseCheck`, `readAnswer`,
+  `promptTab`, `spaceForFolder`).
 - `mods/wool/bin/` (POSIX `sh`): `wool-claim.sh` (`mkdir <git-dir>/wool` as an
   atomic claim; prints `claimed<TAB>git-dir<TAB>main<TAB>branch<TAB>top`),
   `wool-run.sh` (runs `setup.sh`, writes `status`: `running` → `ok` /
@@ -79,9 +100,12 @@ becomes the dev server. What runs and which tabs appear come from
   `exec`s the pane command),
   `wool-wait.sh` (polls `status` once a second; gives up on `failed`, a dead
   runner pid, or no status for 10 s), `wool-bg.sh` (background command to
-  `bg-<n>.log`/`bg-<n>.pid`/`bg-<n>.exit`).
-- No shipped mods are changed. Programs run: `git`, `sh`, `find`, `nohup`, and
-  the repo's commands.
+  `bg-<n>.log`/`bg-<n>.pid`/`bg-<n>.exit`), `wool.sh` (`check`, `list`,
+  `forget`, `run`, `prompt`; store `trust.tsv` rewritten under a `mkdir` lock
+  with temp file + `mv`; no `trust` subcommand). `wool-claim.sh <folder> rerun`
+  skips the age check and clears old state.
+- No shipped mods are changed. Programs run: `git`, `sh`, `find`, `nohup`,
+  `shasum`/`sha256sum`, and the repo's commands.
 
 ## Watch out
 
@@ -126,3 +150,8 @@ becomes the dev server. What runs and which tabs appear come from
    gives only a Shell tab.
 9. A repo with no `.herdr/` files gets nothing; a broken `wool.yml` gives an error
    notification naming it.
+10. A new worktree with an untrusted `.dist` gets only a `wool` prompt tab and
+    nothing runs; `t` runs it and later worktrees run without asking; `o` runs
+    it once; `d` runs nothing now or for later worktrees with that file; a
+    changed file asks again; a gitignored `wool.yml` never asks.
+11. `wool.sh forget` + `wool.sh run` on a declined worktree asks again.
