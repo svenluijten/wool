@@ -28,7 +28,8 @@ function fixture({ text = CONFIG, file = "wool.yml.dist", ignore = false } = {})
   git(main, "worktree", "add", "-q", "-b", "b", wt);
   const path = join(main, ".herdr", file);
   writeFileSync(path, text);
-  const state = join(root, "state");
+  // The state dir sits in the worktree's git dir, as wool-claim.sh makes it.
+  const state = join(git(wt, "rev-parse", "--path-format=absolute", "--git-dir"), "wool");
   mkdirSync(state);
   writeFileSync(join(state, "config.yml"), text);
   const xdg = join(root, "xdg");
@@ -215,4 +216,155 @@ test("parseCheck", () => {
   assert.equal(parseCheck("ask\tnotasha\n"), null);
   assert.equal(parseCheck(""), null);
   assert.equal(parseCheck(null), null);
+});
+
+// ---- wool.sh prompt ----------------------------------------------------
+
+const QUESTION = "[d]ecline  trust [o]nce  [t]rust project";
+const BSD_SCRIPT = process.platform === "darwin" || process.platform === "freebsd";
+const ptyTest = (name, fn) => test(name, { skip: !BSD_SCRIPT && "needs BSD script(1) for a pseudo-terminal" }, fn);
+const count = (s, sub) => s.split(sub).length - 1;
+
+async function until(fn, ms = 5000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (fn()) return true;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  return fn();
+}
+
+// Runs the prompt in a pseudo-terminal. Each answer is typed only once the
+// question is showing (the terminal drops input typed before it's read).
+// `then` replaces the last answer: "hup" closes the terminal, "int" types Ctrl-C.
+async function prompt(fx, answers, then = null) {
+  writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha(readFileSync(join(fx.state, "config.yml"), "utf8"))}\n`);
+  // script(1) can't take a socket as stdin (what Node's pipes are): cat bridges.
+  const c = spawn("sh", ["-c", 'cat | script -q /dev/null sh "$0" prompt "$1"', WOOL, fx.state], {
+    env: { ...process.env, XDG_CONFIG_HOME: fx.xdg }, stdio: ["pipe", "pipe", "pipe"], detached: true,
+  });
+  let out = "";
+  c.stdout.on("data", (d) => (out += d));
+  c.stderr.on("data", (d) => (out += d));
+  const exited = new Promise((r) => c.on("exit", (code, signal) => r(code ?? signal)));
+  let i = 0;
+  for (const a of answers) {
+    assert.ok(await until(() => count(out, QUESTION) > i), `question ${i + 1} never showed:\n${out}`);
+    await new Promise((r) => setTimeout(r, 50));
+    c.stdin.write(a + "\n");
+    i++;
+  }
+  if (then) {
+    assert.ok(await until(() => count(out, QUESTION) > i), `question never showed:\n${out}`);
+    await new Promise((r) => setTimeout(r, 50));
+    if (then === "hup") process.kill(-c.pid, "SIGHUP"); // the terminal goes away
+    if (then === "int") c.stdin.write("\x03");
+  }
+  // Let cat (and so script) finish once the prompt has its answer.
+  await until(() => answer(fx) !== null, 3000);
+  c.stdin.end();
+  const timer = setTimeout(() => { try { process.kill(-c.pid, "SIGKILL"); } catch {} }, 5000);
+  const code = await exited;
+  clearTimeout(timer);
+  return { code, out };
+}
+
+const answer = (fx) => (existsSync(join(fx.state, "trust-answer")) ? readFileSync(join(fx.state, "trust-answer"), "utf8") : null);
+
+ptyTest("prompt: shows repo, file, sha and contents", async () => {
+  const fx = fixture({ text: "version: 1\nsetup:\n  - run: make it so\n" });
+  const { out } = await prompt(fx, ["o"]);
+  assert.ok(out.includes(fx.main), out);
+  assert.ok(out.includes(fx.path), out);
+  assert.ok(out.includes(sha("version: 1\nsetup:\n  - run: make it so\n")), out);
+  assert.ok(out.includes("  - run: make it so"), out);
+});
+
+ptyTest("prompt: t trusts the project", async () => {
+  const fx = fixture();
+  const { code, out } = await prompt(fx, ["t"]);
+  assert.equal(code, 0, out);
+  assert.equal(answer(fx), "trust\n");
+  const lines = storeLines(fx);
+  assert.equal(lines.length, 1);
+  assert.deepEqual(lines[0].split("\t").slice(0, 4), [sha(CONFIG), "trusted", fx.main, fx.path]);
+  assert.match(out, /wool\.sh" run/);
+  assert.ok(out.includes(fx.wt), out);
+});
+
+ptyTest("prompt: o trusts once", async () => {
+  const fx = fixture();
+  const { code, out } = await prompt(fx, ["O"]);
+  assert.equal(code, 0, out);
+  assert.equal(answer(fx), "once\n");
+  assert.deepEqual(storeLines(fx), []);
+  assert.match(out, /wool\.sh" run/);
+});
+
+ptyTest("prompt: d declines", async () => {
+  const fx = fixture();
+  const { code, out } = await prompt(fx, ["d"]);
+  assert.equal(code, 0, out);
+  assert.equal(answer(fx), "decline\n");
+  assert.deepEqual(storeLines(fx)[0].split("\t").slice(0, 2), [sha(CONFIG), "declined"]);
+  assert.match(out, /wool\.sh" forget/);
+  assert.match(out, /wool\.sh" run/);
+});
+
+ptyTest("prompt: anything else asks again", async () => {
+  const fx = fixture();
+  const { out } = await prompt(fx, ["x", "", "tx", "t"]);
+  assert.equal(answer(fx), "trust\n");
+  assert.equal(count(out, QUESTION), 4);
+});
+
+ptyTest("prompt: control characters in the file are stripped", async () => {
+  const fx = fixture({ text: "version: 1\n# \x1b]0;evil\x07 hi\r\n# \x1b[2Jcleared\tok \u009b31m\n" });
+  const { out } = await prompt(fx, ["o"]);
+  const shown = out.slice(out.indexOf("version: 1"), out.indexOf(QUESTION));
+  assert.ok(!shown.includes("\x1b"), JSON.stringify(shown));
+  assert.ok(!shown.includes("\x07"), JSON.stringify(shown));
+  assert.ok(!shown.includes("\u009b"), JSON.stringify(shown));
+  assert.ok(shown.includes("cleared\tok"), JSON.stringify(shown));
+  // The terminal turns each \n into \r\n; a \r from the file would add one more.
+  assert.ok(!shown.includes("hi\r\r"), JSON.stringify(shown));
+});
+
+ptyTest("prompt: hang-up writes none", async () => {
+  const fx = fixture();
+  await prompt(fx, [], "hup");
+  assert.ok(await until(() => answer(fx) !== null), "no trust-answer");
+  assert.equal(answer(fx), "none\n");
+  assert.deepEqual(storeLines(fx), []);
+});
+
+ptyTest("prompt: Ctrl-C writes none", async () => {
+  const fx = fixture();
+  const { code } = await prompt(fx, [], "int");
+  assert.equal(code, 130);
+  assert.equal(answer(fx), "none\n");
+  assert.deepEqual(storeLines(fx), []);
+});
+
+ptyTest("prompt: a config.yml that no longer matches the checked sha is refused", async () => {
+  const fx = fixture();
+  writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha(CONFIG)}\n`);
+  writeFileSync(join(fx.state, "config.yml"), CONFIG + "# edited after the check\n");
+  const c = spawnSync("sh", ["-c", 'cat | script -q /dev/null sh "$0" prompt "$1"', WOOL, fx.state], {
+    encoding: "utf8", env: { ...process.env, XDG_CONFIG_HOME: fx.xdg }, input: "",
+  });
+  assert.notEqual(c.status, 0);
+  assert.match(c.stdout, /changed since/);
+  assert.equal(answer(fx), "none\n");
+  assert.deepEqual(storeLines(fx), []);
+});
+
+test("prompt: refuses without a terminal", () => {
+  const fx = fixture();
+  writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha(CONFIG)}\n`);
+  const r = wool(fx, ["prompt", fx.state], { input: "t\n" });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /needs a terminal/);
+  assert.equal(answer(fx), null);
+  assert.deepEqual(storeLines(fx), []);
 });

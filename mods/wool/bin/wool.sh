@@ -3,8 +3,9 @@
 #
 #   wool.sh list               every trusted or declined file
 #   wool.sh forget <folder>    forget every decision for <folder>'s repo
+#   wool.sh prompt <state dir> ask about a worktree's config (wool runs this)
 #
-# wool itself runs `wool.sh check`. There is deliberately no `trust`
+# wool itself runs `wool.sh check` and `wool.sh prompt`. There is deliberately no `trust`
 # subcommand: trusting a file takes an answer typed into wool's prompt.
 #
 # The store is ${XDG_CONFIG_HOME:-$HOME/.config}/wool/trust.tsv, one line per
@@ -21,6 +22,7 @@ usage() {
   cat >&2 <<'EOF'
 usage: wool.sh list
        wool.sh forget <folder>
+       wool.sh prompt <state dir>
 EOF
   exit 2
 }
@@ -143,6 +145,89 @@ cmd_forget() {
   fi
 }
 
+# Prints a file without terminal control characters (keeps newline and tab),
+# so a config can't move the cursor, retitle the terminal or hide its lines.
+# C1 controls (U+0080..U+009F, two bytes in UTF-8) go too.
+show() {
+  c2=$(printf '\302')
+  c1lo=$(printf '\200')
+  c1hi=$(printf '\237')
+  LC_ALL=C tr -d '\000-\010\013-\037\177' < "$1" | LC_ALL=C sed "s/$c2[$c1lo-$c1hi]//g"
+}
+
+cmd_prompt() {
+  [ $# -eq 1 ] || usage
+  state=$1
+  if [ ! -t 0 ]; then
+    echo "wool.sh prompt: needs a terminal" >&2
+    exit 1
+  fi
+  answered=
+  answer_file="$state/trust-answer"
+  # Closed, hung up or Ctrl-C'd without an answer: nothing saved, nothing runs.
+  trap 'if [ -z "$answered" ]; then printf "none\n" > "$answer_file"; fi; exit 130' HUP INT TERM
+  give_up() {
+    printf '%s\n' "$1"
+    answered=1
+    printf 'none\n' > "$answer_file"
+    exit 1
+  }
+
+  request=$(cat "$state/trust-request" 2>/dev/null) || give_up "wool: no trust request in $state."
+  tab=$(printf '\t')
+  repo=${request%%"$tab"*}
+  rest=${request#*"$tab"}
+  file=${rest%%"$tab"*}
+  sum=${rest#*"$tab"}
+  [ -f "$state/config.yml" ] || give_up "wool: no $state/config.yml."
+  # What's shown must be what's checksummed (and what wool runs).
+  [ "$(checksum "$state/config.yml")" = "$sum" ] || give_up "wool: $state/config.yml changed since wool read it. Nothing will run."
+
+  bin=$(cd "$(dirname "$0")" && pwd)
+  worktree=$(dirname "$(cat "$state/../gitdir" 2>/dev/null)" 2>/dev/null)
+  [ -n "$worktree" ] && [ "$worktree" != . ] || worktree="<worktree>"
+
+  printf '\nwool: this repo wants to set up your new worktree.\n\n'
+  printf '  Repo:      %s\n  File:      %s\n  Checksum:  %s\n\n' "$repo" "$file" "$sum"
+  printf -- '----- %s -----\n' "${file##*/}"
+  show "$state/config.yml"
+  printf -- '\n----- end -----\n\n'
+  printf 'Nothing from this file has run yet. Its commands run as you.\n\n'
+
+  while :; do
+    printf '[d]ecline  trust [o]nce  [t]rust project: '
+    if ! read -r a; then
+      printf '\n'
+      answered=1
+      printf 'none\n' > "$answer_file"
+      echo "No answer. Nothing will run."
+      exit 0
+    fi
+    case $a in
+      d | D | decline | Decline) choice=decline ;;
+      o | O | once | Once) choice=once ;;
+      t | T | trust | Trust) choice=trust ;;
+      *) continue ;;
+    esac
+    break
+  done
+
+  case $choice in
+    trust) store_put "$sum" trusted "$repo" "$file" ;;
+    decline) store_put "$sum" declined "$repo" "$file" ;;
+  esac
+  answered=1
+  printf '%s\n' "$choice" > "$answer_file"
+
+  if [ "$choice" = decline ]; then
+    printf '\nDeclined. wool won'"'"'t ask about this file again.\n'
+    printf 'To undo:\n  sh "%s/wool.sh" forget "%s"\n  sh "%s/wool.sh" run "%s"\n' "$bin" "$repo" "$bin" "$worktree"
+  else
+    printf '\nwool is setting up %s.\n' "$worktree"
+    printf 'If nothing happens (wool restarted while this was open), run:\n  sh "%s/wool.sh" run "%s"\n' "$bin" "$worktree"
+  fi
+}
+
 [ $# -ge 1 ] || usage
 sub=$1
 shift
@@ -150,6 +235,7 @@ case $sub in
   check) cmd_check "$@" ;;
   list) cmd_list "$@" ;;
   forget) cmd_forget "$@" ;;
+  prompt) cmd_prompt "$@" ;;
   _put) # for tests only
     [ $# -eq 4 ] || usage
     store_put "$@" ;;

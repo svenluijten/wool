@@ -74,7 +74,7 @@
 - Consumes: `store_put`, `<state dir>/trust-request`, `<state dir>/config.yml` (Task 1).
 - Produces: `wool.sh prompt <state dir>` writes `<state dir>/trust-answer` = `trust` | `once` | `decline` | `none` (one word + newline); `trust`/`decline` also `store_put`. Exits 0 after an answer, 1 when stdin isn't a terminal (prints `wool.sh prompt: needs a terminal` to stderr, writes nothing), 130 on interrupt.
 
-- [ ] **Step 1: Write the failing tests** — run the prompt under a pseudo-terminal with `script -q /dev/null sh wool.sh prompt <dir>` (BSD/macOS `script`; skip the pty tests when `script` isn't BSD-style) feeding stdin:
+- [x] **Step 1: Write the failing tests** — run the prompt under a pseudo-terminal with `script -q /dev/null sh wool.sh prompt <dir>` (BSD/macOS `script`; skip the pty tests when `script` isn't BSD-style) feeding stdin:
   - `prompt: shows repo, file, sha and contents` (stdout contains each, and the file's lines).
   - `prompt: t trusts the project` → answer `trust`, store has `trusted` line; `prompt: o trusts once` → `once`, store empty; `prompt: d declines` → `decline`, store has `declined` line.
   - `prompt: anything else asks again` (input `x\nt`) → `trust`, and the question printed twice.
@@ -82,10 +82,10 @@
   - `prompt: hang-up writes none` (start it, send SIGHUP) → `none`, store empty.
   - `prompt: refuses without a terminal` (`spawnSync` with piped stdin) → exit 1, no `trust-answer`.
   - After `trust`/`once`: stdout mentions `wool.sh run`; after `decline`: mentions `wool.sh forget` and `wool.sh run`.
-- [ ] **Step 2: Run** `node --test tests/trust.test.js` — Expected: FAIL on the new tests.
-- [ ] **Step 3: Implement** `prompt`: `[ -t 0 ]` check; trap HUP/INT/TERM → write `none`, exit 130; print header, then `LC_ALL=C tr -d '\000-\010\013-\037\177' < config.yml` (keeps `\t` `\n`); loop `printf '[d]ecline  trust [o]nce  [t]rust project: '; read -r a` (case-insensitive first letter); EOF on read = `none`.
-- [ ] **Step 4: Run** `npm test` — Expected: all pass.
-- [ ] **Step 5: Commit** `feat: wool.sh prompt asks before running a repo's config`.
+- [x] **Step 2: Run** `node --test tests/trust.test.js` — Expected: FAIL on the new tests.
+- [x] **Step 3: Implement** `prompt`: `[ -t 0 ]` check; trap HUP/INT/TERM → write `none`, exit 130; print header, then `LC_ALL=C tr -d '\000-\010\013-\037\177' < config.yml` (keeps `\t` `\n`); loop `printf '[d]ecline  trust [o]nce  [t]rust project: '; read -r a` (case-insensitive first letter); EOF on read = `none`.
+- [x] **Step 4: Run** `npm test` — Expected: all pass.
+- [x] **Step 5: Commit** `feat: wool.sh prompt asks before running a repo's config`.
 
 ### Task 3: Gate in main.js
 
