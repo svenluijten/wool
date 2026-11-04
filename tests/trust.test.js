@@ -1,15 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, realpathSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, realpathSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseCheck, readAnswer, promptTab, spaceForFolder } from "../mods/wool/lib/trust.js";
+import { parseCheck, readAnswer, requestNonce, promptTab, spaceForFolder } from "../mods/wool/lib/trust.js";
 
 const WOOL = join(dirname(fileURLToPath(import.meta.url)), "..", "mods", "wool", "bin", "wool.sh");
 const tmp = (name = "wool trust ") => realpathSync(mkdtempSync(join(tmpdir(), name)));
 const CONFIG = "version: 1\nsetup:\n  - run: echo hi\n";
+const NONCE = "n1"; // what main.js passes to check, once per question
 
 function git(cwd, ...args) {
   return execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } }).trim();
@@ -17,7 +18,7 @@ function git(cwd, ...args) {
 
 // A repo with a linked worktree, its own XDG_CONFIG_HOME, and a state dir
 // holding the config text wool read.
-function fixture({ text = CONFIG, file = "wool.yml.dist", ignore = false } = {}) {
+function fixture({ text = CONFIG, file = "wool.yml.dist", ignore = false, xdg = null } = {}) {
   const root = tmp();
   const main = join(root, "main repo");
   mkdirSync(join(main, ".herdr"), { recursive: true });
@@ -32,7 +33,7 @@ function fixture({ text = CONFIG, file = "wool.yml.dist", ignore = false } = {})
   const state = join(git(wt, "rev-parse", "--path-format=absolute", "--git-dir"), "wool");
   mkdirSync(state);
   writeFileSync(join(state, "config.yml"), text);
-  const xdg = join(root, "xdg");
+  xdg ??= join(root, "xdg");
   return { root, main, wt, path, state, xdg, store: join(xdg, "wool", "trust.tsv") };
 }
 
@@ -43,14 +44,16 @@ function wool(fx, args, opts = {}) {
 const sha = (s) => execFileSync("shasum", ["-a", "256"], { input: s, encoding: "utf8" }).split(" ")[0];
 
 function check(fx) {
-  const r = wool(fx, ["check", fx.state, fx.main, fx.path]);
+  const r = wool(fx, ["check", fx.state, fx.main, fx.path, NONCE]);
   assert.equal(r.status, 0, r.stderr);
   return r.stdout;
 }
 
+// A decision as the prompt stores it (wool.sh has no command that writes one).
 function put(fx, s, decision, repo = fx.main, file = fx.path) {
-  const r = wool(fx, ["_put", s, decision, repo, file]);
-  assert.equal(r.status, 0, r.stderr);
+  mkdirSync(dirname(fx.store), { recursive: true });
+  const old = existsSync(fx.store) ? readFileSync(fx.store, "utf8") : "";
+  writeFileSync(fx.store, old + `${s}\t${decision}\t${repo}\t${file}\t2026-11-04T12:00:00Z\n`);
 }
 
 const storeLines = (fx) => (existsSync(fx.store) ? readFileSync(fx.store, "utf8").split("\n").filter((l) => l !== "") : []);
@@ -58,7 +61,7 @@ const storeLines = (fx) => (existsSync(fx.store) ? readFileSync(fx.store, "utf8"
 test("check: a dist with no entry asks", () => {
   const fx = fixture();
   assert.equal(check(fx), `ask\t${sha(CONFIG)}\n`);
-  assert.equal(readFileSync(join(fx.state, "trust-request"), "utf8"), `${fx.main}\t${fx.path}\t${sha(CONFIG)}\n`);
+  assert.equal(readFileSync(join(fx.state, "trust-request"), "utf8"), `${fx.main}\t${fx.path}\t${sha(CONFIG)}\t${NONCE}\n`);
 });
 
 test("check: a gitignored wool.yml is implicit", () => {
@@ -100,56 +103,6 @@ test("check: a changed file (new sha) asks again", () => {
   put(fx, sha(CONFIG), "trusted");
   writeFileSync(join(fx.state, "config.yml"), CONFIG + "# changed\n");
   assert.equal(check(fx), `ask\t${sha(CONFIG + "# changed\n")}\n`);
-});
-
-test("store: two concurrent puts both land", async () => {
-  const fx = fixture();
-  const env = { ...process.env, XDG_CONFIG_HOME: fx.xdg };
-  const runs = Array.from({ length: 10 }, (_, i) => new Promise((resolve) => {
-    const c = spawn("sh", [WOOL, "_put", sha(String(i)), "trusted", fx.main, fx.path], { env, stdio: "ignore" });
-    c.on("exit", resolve);
-  }));
-  const codes = await Promise.all(runs);
-  assert.deepEqual(codes, Array(10).fill(0));
-  assert.equal(storeLines(fx).length, 10);
-  assert.ok(!existsSync(join(fx.xdg, "wool", "trust.lock")), "the lock was left behind");
-});
-
-test("store: a new decision replaces the old line for the same repo and sha", () => {
-  const fx = fixture();
-  put(fx, sha(CONFIG), "declined");
-  put(fx, sha("other"), "trusted");
-  put(fx, sha(CONFIG), "trusted");
-  const lines = storeLines(fx);
-  assert.equal(lines.length, 2);
-  assert.equal(lines.filter((l) => l.startsWith(sha(CONFIG))).length, 1);
-  assert.match(lines.find((l) => l.startsWith(sha(CONFIG))), /\ttrusted\t/);
-  assert.equal(check(fx), `trusted\t${sha(CONFIG)}\n`);
-});
-
-test("store: a line is sha, decision, repo, file and an ISO date", () => {
-  const fx = fixture();
-  put(fx, sha(CONFIG), "trusted");
-  const f = storeLines(fx)[0].split("\t");
-  assert.deepEqual(f.slice(0, 4), [sha(CONFIG), "trusted", fx.main, fx.path]);
-  assert.match(f[4], /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
-});
-
-test("store: junk lines are kept and ignored", () => {
-  const fx = fixture();
-  mkdirSync(dirname(fx.store), { recursive: true });
-  const junk = `\ngarbage\n${sha(CONFIG)}\ttrusted\t${fx.main}\n${sha(CONFIG)}\tmaybe\t${fx.main}\t${fx.path}\t2026-01-01T00:00:00Z\n`;
-  writeFileSync(fx.store, junk);
-  assert.equal(check(fx), `ask\t${sha(CONFIG)}\n`);
-  const l = wool(fx, ["list"]);
-  assert.equal(l.status, 0, l.stderr);
-  assert.equal(l.stdout, "No trusted or declined files.\n");
-  put(fx, sha(CONFIG), "declined");
-  const text = readFileSync(fx.store, "utf8");
-  assert.ok(text.includes("garbage\n"));
-  assert.ok(text.includes(`${sha(CONFIG)}\ttrusted\t${fx.main}\n`));
-  assert.ok(text.includes(`\tmaybe\t`));
-  assert.equal(check(fx), `declined\t${sha(CONFIG)}\n`);
 });
 
 test("list: empty store says so", () => {
@@ -198,7 +151,7 @@ test("forget: a folder that isn't a repo is an error", () => {
 
 test("wool.sh: no trust subcommand", () => {
   const fx = fixture();
-  for (const args of [["trust", fx.wt], [], ["nope"]]) {
+  for (const args of [["trust", fx.wt], [], ["nope"], ["_put", sha(CONFIG), "trusted", fx.main, fx.path]]) {
     const r = wool(fx, args);
     assert.equal(r.status, 2, args.join(" "));
     assert.match(r.stderr, /usage/i);
@@ -238,7 +191,7 @@ async function until(fn, ms = 5000) {
 // question is showing (the terminal drops input typed before it's read).
 // `then` replaces the last answer: "hup" closes the terminal, "int" types Ctrl-C.
 async function prompt(fx, answers, then = null) {
-  writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha(readFileSync(join(fx.state, "config.yml"), "utf8"))}\n`);
+  writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha(readFileSync(join(fx.state, "config.yml"), "utf8"))}\t${NONCE}\n`);
   // script(1) can't take a socket as stdin (what Node's pipes are): cat bridges.
   const c = spawn("sh", ["-c", 'cat | script -q /dev/null sh "$0" prompt "$1"', WOOL, fx.state], {
     env: { ...process.env, XDG_CONFIG_HOME: fx.xdg }, stdio: ["pipe", "pipe", "pipe"], detached: true,
@@ -261,8 +214,9 @@ async function prompt(fx, answers, then = null) {
     if (then === "int") c.stdin.write("\x03");
   }
   // Let cat (and so script) finish once the prompt has its answer.
-  await until(() => answer(fx) !== null, 3000);
+  await until(() => answer(fx) !== null, 8000);
   c.stdin.end();
+  await new Promise((r) => setTimeout(r, 50));
   const timer = setTimeout(() => { try { process.kill(-c.pid, "SIGKILL"); } catch {} }, 5000);
   const code = await exited;
   clearTimeout(timer);
@@ -284,7 +238,7 @@ ptyTest("prompt: t trusts the project", async () => {
   const fx = fixture();
   const { code, out } = await prompt(fx, ["t"]);
   assert.equal(code, 0, out);
-  assert.equal(answer(fx), "trust\n");
+  assert.equal(answer(fx), "trust\tn1\n");
   const lines = storeLines(fx);
   assert.equal(lines.length, 1);
   assert.deepEqual(lines[0].split("\t").slice(0, 4), [sha(CONFIG), "trusted", fx.main, fx.path]);
@@ -296,7 +250,7 @@ ptyTest("prompt: o trusts once", async () => {
   const fx = fixture();
   const { code, out } = await prompt(fx, ["O"]);
   assert.equal(code, 0, out);
-  assert.equal(answer(fx), "once\n");
+  assert.equal(answer(fx), "once\tn1\n");
   assert.deepEqual(storeLines(fx), []);
   assert.match(out, /wool\.sh" run/);
 });
@@ -305,7 +259,7 @@ ptyTest("prompt: d declines", async () => {
   const fx = fixture();
   const { code, out } = await prompt(fx, ["d"]);
   assert.equal(code, 0, out);
-  assert.equal(answer(fx), "decline\n");
+  assert.equal(answer(fx), "decline\tn1\n");
   assert.deepEqual(storeLines(fx)[0].split("\t").slice(0, 2), [sha(CONFIG), "declined"]);
   assert.match(out, /wool\.sh" forget/);
   assert.match(out, /wool\.sh" run/);
@@ -314,7 +268,7 @@ ptyTest("prompt: d declines", async () => {
 ptyTest("prompt: anything else asks again", async () => {
   const fx = fixture();
   const { out } = await prompt(fx, ["x", "", "tx", "t"]);
-  assert.equal(answer(fx), "trust\n");
+  assert.equal(answer(fx), "trust\tn1\n");
   assert.equal(count(out, QUESTION), 4);
 });
 
@@ -334,7 +288,7 @@ ptyTest("prompt: hang-up writes none", async () => {
   const fx = fixture();
   await prompt(fx, [], "hup");
   assert.ok(await until(() => answer(fx) !== null), "no trust-answer");
-  assert.equal(answer(fx), "none\n");
+  assert.equal(answer(fx), "none\tn1\n");
   assert.deepEqual(storeLines(fx), []);
 });
 
@@ -342,26 +296,26 @@ ptyTest("prompt: Ctrl-C writes none", async () => {
   const fx = fixture();
   const { code } = await prompt(fx, [], "int");
   assert.equal(code, 130);
-  assert.equal(answer(fx), "none\n");
+  assert.equal(answer(fx), "none\tn1\n");
   assert.deepEqual(storeLines(fx), []);
 });
 
 ptyTest("prompt: a config.yml that no longer matches the checked sha is refused", async () => {
   const fx = fixture();
-  writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha(CONFIG)}\n`);
+  writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha(CONFIG)}\t${NONCE}\n`);
   writeFileSync(join(fx.state, "config.yml"), CONFIG + "# edited after the check\n");
   const c = spawnSync("sh", ["-c", 'cat | script -q /dev/null sh "$0" prompt "$1"', WOOL, fx.state], {
     encoding: "utf8", env: { ...process.env, XDG_CONFIG_HOME: fx.xdg }, input: "",
   });
   assert.notEqual(c.status, 0);
   assert.match(c.stdout, /changed since/);
-  assert.equal(answer(fx), "none\n");
+  assert.equal(answer(fx), "none\tn1\n");
   assert.deepEqual(storeLines(fx), []);
 });
 
 test("prompt: refuses without a terminal", () => {
   const fx = fixture();
-  writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha(CONFIG)}\n`);
+  writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha(CONFIG)}\t${NONCE}\n`);
   const r = wool(fx, ["prompt", fx.state], { input: "t\n" });
   assert.equal(r.status, 1);
   assert.match(r.stderr, /needs a terminal/);
@@ -373,13 +327,20 @@ test("prompt: refuses without a terminal", () => {
 
 test("readAnswer", () => {
   for (const w of ["trust", "once", "decline", "none"]) {
-    assert.equal(readAnswer(w), w);
-    assert.equal(readAnswer(w + "\n"), w);
+    assert.equal(readAnswer(`${w}\tn1`, "n1"), w);
+    assert.equal(readAnswer(`${w}\tn1\n`, "n1"), w);
+    assert.equal(readAnswer(`${w}\tn2\n`, "n1"), null, "another question's answer");
+    assert.equal(readAnswer(`${w}\n`, "n1"), null, "no nonce");
   }
-  assert.equal(readAnswer(null), null);
-  assert.equal(readAnswer(""), null);
-  assert.equal(readAnswer("maybe\n"), null);
-  assert.equal(readAnswer("tru"), null);
+  assert.equal(readAnswer(null, "n1"), null);
+  assert.equal(readAnswer("", "n1"), null);
+  assert.equal(readAnswer("maybe\tn1\n", "n1"), null);
+});
+
+test("requestNonce", () => {
+  assert.equal(requestNonce(`/r\t/r/.herdr/wool.yml.dist\t${sha(CONFIG)}\tn1\n`), "n1");
+  assert.equal(requestNonce(`/r\t/f\t${sha(CONFIG)}\n`), null);
+  assert.equal(requestNonce(null), null);
 });
 
 test("promptTab", () => {
@@ -436,7 +397,7 @@ test("_take: prints each request once and removes it", () => {
 ptyTest("prompt: an answer to an out-of-date question is not used", async () => {
   // wool asked again (wool.sh run) while this old prompt stayed open.
   const fx = fixture();
-  writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha(CONFIG)}\n`);
+  writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha(CONFIG)}\t${NONCE}\n`);
   const c = spawn("sh", ["-c", 'cat | script -q /dev/null sh "$0" prompt "$1"', WOOL, fx.state], {
     env: { ...process.env, XDG_CONFIG_HOME: fx.xdg }, stdio: ["pipe", "pipe", "pipe"], detached: true,
   });
@@ -444,7 +405,8 @@ ptyTest("prompt: an answer to an out-of-date question is not used", async () => 
   c.stdout.on("data", (d) => (out += d));
   const exited = new Promise((r) => c.on("exit", r));
   assert.ok(await until(() => out.includes(QUESTION)), out);
-  writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha("newer")}\n`);
+  // Same file, so the same sha: only the question's nonce tells them apart.
+  writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha(CONFIG)}\tn2\n`);
   c.stdin.write("t\n");
   await until(() => out.includes("out of date"), 3000);
   c.stdin.end();
@@ -464,4 +426,64 @@ test("spaceForFolder", () => {
   assert.equal(spaceForFolder([{ id: "u", folder: "/x/u", tabs: [] }], "/x/u").id, "u");
   assert.equal(spaceForFolder(all, "/x/none"), null);
   assert.equal(spaceForFolder(all, "/x"), null);
+});
+
+// ---- the store, written by the prompt ---------------------------------
+
+ptyTest("store: concurrent answers all land", async () => {
+  const xdg = join(tmp(), "xdg");
+  const fxs = Array.from({ length: 6 }, (_, i) => fixture({ text: CONFIG + `# ${i}\n`, xdg }));
+  await Promise.all(fxs.map((fx, i) => prompt(fx, [i % 2 ? "d" : "t"])));
+  const lines = storeLines(fxs[0]);
+  assert.equal(lines.length, 6, lines.join("\n"));
+  assert.ok(!existsSync(join(xdg, "wool", "trust.lock")), "the lock was left behind");
+});
+
+ptyTest("store: a new decision replaces the old line for the same repo and sha", async () => {
+  const fx = fixture();
+  put(fx, sha("other"), "trusted");
+  await prompt(fx, ["d"]);
+  rmSync(join(fx.state, "trust-answer"));
+  await prompt(fx, ["t"]);
+  const lines = storeLines(fx);
+  assert.equal(lines.length, 2);
+  assert.equal(lines.filter((l) => l.startsWith(sha(CONFIG))).length, 1);
+  assert.match(lines.find((l) => l.startsWith(sha(CONFIG))), /\ttrusted\t/);
+  assert.equal(check(fx), `trusted\t${sha(CONFIG)}\n`);
+});
+
+ptyTest("store: a line is sha, decision, repo, file and an ISO date", async () => {
+  const fx = fixture();
+  await prompt(fx, ["t"]);
+  const f = storeLines(fx)[0].split("\t");
+  assert.deepEqual(f.slice(0, 4), [sha(CONFIG), "trusted", fx.main, fx.path]);
+  assert.match(f[4], /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+});
+
+ptyTest("store: junk lines are kept and ignored", async () => {
+  const fx = fixture();
+  mkdirSync(dirname(fx.store), { recursive: true });
+  const junk = `\ngarbage\n${sha(CONFIG)}\ttrusted\t${fx.main}\n${sha(CONFIG)}\tmaybe\t${fx.main}\t${fx.path}\t2026-01-01T00:00:00Z\n`;
+  writeFileSync(fx.store, junk);
+  assert.equal(check(fx), `ask\t${sha(CONFIG)}\n`);
+  const l = wool(fx, ["list"]);
+  assert.equal(l.status, 0, l.stderr);
+  assert.equal(l.stdout, "No trusted or declined files.\n");
+  await prompt(fx, ["d"]);
+  const text = readFileSync(fx.store, "utf8");
+  assert.ok(text.includes("garbage\n"));
+  assert.ok(text.includes(`${sha(CONFIG)}\ttrusted\t${fx.main}\n`));
+  assert.ok(text.includes(`\tmaybe\t`));
+  assert.equal(check(fx), `declined\t${sha(CONFIG)}\n`);
+});
+
+ptyTest("prompt: a store it can't write still answers none", async () => {
+  // Another prompt holds the lock (or a killed one left it behind).
+  const fx = fixture();
+  mkdirSync(join(fx.xdg, "wool", "trust.lock"), { recursive: true });
+  const { code, out } = await prompt(fx, ["t"]);
+  assert.ok(await until(() => answer(fx) !== null, 8000), out);
+  assert.notEqual(code, 0);
+  assert.equal(answer(fx), "none\tn1\n");
+  assert.deepEqual(storeLines(fx), []);
 });

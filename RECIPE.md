@@ -55,6 +55,9 @@ prompt tab. wool itself never shows.
   a `trusted` entry for this repo + checksum runs, a `declined` one does
   nothing silently, no entry opens the `wool` prompt tab. Plain-shell spaces:
   the prompt has focus. Others: focus goes back, plus a warning notification.
+  Each question has a nonce (`check`'s 4th argument, the 4th field of
+  `trust-request`); the prompt writes `<answer>\t<nonce>` and wool ignores
+  any other nonce, and stops waiting if a newer question replaced its own.
   wool polls `trust-answer` (`trust`/`once` → carry on; `decline`/`none` →
   close the tab, info notification, nothing runs). A tab that vanishes
   without an answer counts as `none` after 2 s.
@@ -91,7 +94,7 @@ prompt tab. wool itself never shows.
   main `wool.yml`, worktree `wool.yml`, worktree `wool.yml.dist`, main
   `wool.yml.dist`), `detect.js` (classification, claim parsing), `shell.js` (setup script,
   argv builders), `plan.js` (steps: `tab`, `split`, `background`,
-  `closeOriginal`, `focus`), `trust.js` (`parseCheck`, `readAnswer`,
+  `closeOriginal`, `focus`), `trust.js` (`parseCheck`, `readAnswer`, `requestNonce`,
   `promptTab`, `spaceForFolder`).
 - `mods/wool/bin/` (POSIX `sh`): `wool-claim.sh` (`mkdir <git-dir>/wool` as an
   atomic claim; prints `claimed<TAB>git-dir<TAB>main<TAB>branch<TAB>top`),

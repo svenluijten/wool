@@ -73,7 +73,17 @@ unlock() {
   fi
 }
 
-trap unlock EXIT
+# Ends every run: drops the store lock, and if a prompt is ending without an
+# answer (an error, a signal, a closed terminal), answers `none` for it.
+answered=1
+nonce=
+finish() {
+  unlock
+  if [ -z "$answered" ] && [ -n "$nonce" ] && [ "$(cat "$state/trust-request" 2>/dev/null)" = "$request" ]; then
+    printf 'none\t%s\n' "$nonce" > "$state/trust-answer"
+  fi
+}
+trap finish EXIT
 
 # Rewrites the store as: old lines that awk program $1 keeps, then $2 (if any).
 # Runs under the lock; the new file replaces the old one with mv.
@@ -100,12 +110,13 @@ store_get() {
 }
 
 cmd_check() {
-  [ $# -eq 3 ] || usage
-  state=$1 repo=$2 file=$3
+  [ $# -eq 4 ] || usage
+  state=$1 repo=$2 file=$3 ask=$4
   [ -f "$state/config.yml" ] || die "check: no $state/config.yml"
   sum=$(checksum "$state/config.yml")
   [ -n "$sum" ] || die "check: couldn't checksum $state/config.yml"
-  printf '%s\t%s\t%s\n' "$repo" "$file" "$sum" > "$state/trust-request" || die "check: can't write $state/trust-request"
+  # <nonce>: wool's id for this question; the prompt's answer carries it.
+  printf '%s\t%s\t%s\t%s\n' "$repo" "$file" "$sum" "$ask" > "$state/trust-request" || die "check: can't write $state/trust-request"
   verdict=ask
   case ${file##*/} in
     wool.yml)
@@ -165,14 +176,12 @@ cmd_prompt() {
     echo "wool.sh prompt: needs a terminal" >&2
     exit 1
   fi
+  # Closed, hung up, Ctrl-C'd or failed without an answer: finish() answers
+  # none (nothing saved, nothing runs).
   answered=
-  answer_file="$state/trust-answer"
-  # Closed, hung up or Ctrl-C'd without an answer: nothing saved, nothing runs.
-  trap 'if [ -z "$answered" ]; then printf "none\n" > "$answer_file"; fi; exit 130' HUP INT TERM
+  trap 'exit 130' HUP INT TERM
   give_up() {
     printf '%s\n' "$1"
-    answered=1
-    printf 'none\n' > "$answer_file"
     exit 1
   }
 
@@ -181,7 +190,10 @@ cmd_prompt() {
   repo=${request%%"$tab"*}
   rest=${request#*"$tab"}
   file=${rest%%"$tab"*}
-  sum=${rest#*"$tab"}
+  rest=${rest#*"$tab"}
+  sum=${rest%%"$tab"*}
+  nonce=${rest#*"$tab"}
+  [ "$nonce" != "$rest" ] && [ -n "$nonce" ] || { nonce=; give_up "wool: $state/trust-request isn't one wool wrote."; }
   [ -f "$state/config.yml" ] || give_up "wool: no $state/config.yml."
   # What's shown must be what's checksummed (and what wool runs).
   [ "$(checksum "$state/config.yml")" = "$sum" ] || give_up "wool: $state/config.yml changed since wool read it. Nothing will run."
@@ -200,10 +212,7 @@ cmd_prompt() {
   while :; do
     printf '[d]ecline  trust [o]nce  [t]rust project: '
     if ! read -r a; then
-      printf '\n'
-      answered=1
-      printf 'none\n' > "$answer_file"
-      echo "No answer. Nothing will run."
+      printf '\nNo answer. Nothing will run.\n'
       exit 0
     fi
     case $a in
@@ -228,7 +237,7 @@ cmd_prompt() {
     decline) store_put "$sum" declined "$repo" "$file" ;;
   esac
   answered=1
-  printf '%s\n' "$choice" > "$answer_file"
+  printf '%s\t%s\n' "$choice" "$nonce" > "$state/trust-answer"
 
   if [ "$choice" = decline ]; then
     printf '\nDeclined. wool won'"'"'t ask about this file again.\n'
@@ -280,8 +289,5 @@ case $sub in
   run) cmd_run "$@" ;;
   prompt) cmd_prompt "$@" ;;
   _take) cmd_take ;;
-  _put) # for tests only
-    [ $# -eq 4 ] || usage
-    store_put "$@" ;;
   *) usage ;;
 esac

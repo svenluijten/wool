@@ -16,7 +16,7 @@ import { loadConfig } from "./lib/config.js";
 import { classifySpace, newSpaces, parseClaim, originalIsIdle, FRESH_MINUTES, PENDING_LIMIT_MS } from "./lib/detect.js";
 import { setupScript } from "./lib/shell.js";
 import { planLayout, planSetupOnly, pickAgent } from "./lib/plan.js";
-import { parseCheck, readAnswer, promptTab, spaceForFolder } from "./lib/trust.js";
+import { parseCheck, readAnswer, requestNonce, promptTab, spaceForFolder } from "./lib/trust.js";
 
 const STEP_TIMEOUT_MS = 5000;
 const STATUS_POLL_MS = 2000;
@@ -239,16 +239,19 @@ export default class Wool extends View {
     if (config.text.includes("\0")) throw new Error(`${tilde(config.file)} contains a NUL byte`);
     const w = await writeFile(`${wt.stateDir}/config.yml`, config.text);
     if (w.code !== 0) throw new Error(`couldn't write ${wt.stateDir}/config.yml: ${w.stderr.trim()}`);
-    const r = await exec("sh", [`${this.binDir}/wool.sh`, "check", wt.stateDir, wt.main, config.file]);
+    // Ties the prompt's answer to this question, not an older or newer one
+    // (wool.sh run, or a second copy of wool, asking about the same worktree).
+    const nonce = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    const r = await exec("sh", [`${this.binDir}/wool.sh`, "check", wt.stateDir, wt.main, config.file, nonce]);
     const c = r.code === 0 ? parseCheck(r.stdout) : null;
     if (!c) throw new Error(`couldn't check whether ${tilde(config.file)} is trusted: ${(r.stderr || r.stdout).trim()}`);
     if (c.verdict === "implicit" || c.verdict === "trusted") return true;
     if (c.verdict === "declined") return false; // asked before: silently nothing
-    return this.askTrust(cx, space, kind, wt, config.file);
+    return this.askTrust(cx, space, kind, wt, config.file, nonce);
   }
 
   // Adds the `wool` tab running `wool.sh prompt` and waits for its answer.
-  async askTrust(cx, space, kind, wt, file) {
+  async askTrust(cx, space, kind, wt, file, nonce) {
     const name = wt.branch || tilde(wt.worktree);
     const before = focused();
     const old = tabIdsOf(space.id);
@@ -259,13 +262,13 @@ export default class Wool extends View {
     if (!tab || !pane) throw new Error(`Herdr didn't create the wool tab within ${STEP_TIMEOUT_MS / 1000} s`);
     this.asking.set(wt.worktree, pane);
     try {
-      return await this.awaitAnswer(cx, space, kind, wt, file, before, tab, pane);
+      return await this.awaitAnswer(cx, space, kind, wt, file, nonce, before, tab, pane);
     } finally {
       this.asking.delete(wt.worktree);
     }
   }
 
-  async awaitAnswer(cx, space, kind, wt, file, before, tab, pane) {
+  async awaitAnswer(cx, space, kind, wt, file, nonce, before, tab, pane) {
     const name = wt.branch || tilde(wt.worktree);
 
     if (kind !== "plain-shell") {
@@ -282,8 +285,13 @@ export default class Wool extends View {
     let answer = null;
     let goneSince = null;
     for (;;) {
-      answer = readAnswer(await readTextFile(`${wt.stateDir}/trust-answer`));
+      answer = readAnswer(await readTextFile(`${wt.stateDir}/trust-answer`), nonce);
       if (answer) break;
+      // Asked again since (wool.sh run): that question's flow takes over.
+      if (requestNonce(await readTextFile(`${wt.stateDir}/trust-request`)) !== nonce) {
+        if (tabIdsOf(space.id).has(tab)) run("tab.close", { id: tab, confirmed: true });
+        return false;
+      }
       // The tab went away without writing an answer (killed): no answer.
       if (!tabIdsOf(space.id).has(tab)) {
         goneSince ??= Date.now();

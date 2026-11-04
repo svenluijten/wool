@@ -13,11 +13,17 @@ export function parseCheck(stdout) {
 
 const ANSWERS = new Set(["trust", "once", "decline", "none"]);
 
-// Reads <state dir>/trust-answer as `wool.sh prompt` writes it; null until
-// there is a known answer.
-export function readAnswer(text) {
-  const word = String(text ?? "").replace(/\r?\n$/, "");
-  return ANSWERS.has(word) ? word : null;
+// Reads <state dir>/trust-answer ("<answer>\t<nonce>") as `wool.sh prompt`
+// writes it; null until there is an answer to *this* question (its nonce).
+export function readAnswer(text, nonce) {
+  const [word, n, ...rest] = String(text ?? "").replace(/\r?\n$/, "").split("\t");
+  return ANSWERS.has(word) && n === nonce && rest.length === 0 ? word : null;
+}
+
+// The nonce of the question in <state dir>/trust-request, or null.
+export function requestNonce(text) {
+  const f = String(text ?? "").replace(/\r?\n$/, "").split("\t");
+  return f.length === 4 && f[3] !== "" ? f[3] : null;
 }
 
 // The tab wool adds to a space to ask about its config.
