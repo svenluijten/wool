@@ -209,7 +209,7 @@ test("withEnv argv sets the variables for the command", () => {
 });
 
 test("scripts are valid POSIX sh", () => {
-  for (const f of ["wool-run.sh", "wool-wait.sh", "wool-bg.sh"]) {
+  for (const f of ["wool-run.sh", "wool-wait.sh", "wool-bg.sh", "wool-claim.sh", "wool.sh"]) {
     const r = run(["sh", "-n", join(BIN, f)]);
     assert.equal(r.status, 0, `${f}: ${r.stderr}`);
   }

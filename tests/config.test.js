@@ -50,6 +50,11 @@ test("loadConfig loads and validates the file", async () => {
   assert.equal(c.value.tabs[0].panes[0].kind, "shell");
 });
 
+test("loadConfig returns the text it read", async () => {
+  const c = await loadConfig(roots, reader({ "/code/app/.herdr/wool.yml.dist": CONFIG }));
+  assert.equal(c.text, CONFIG);
+});
+
 test("loadConfig reports a YAML error with file and line", async () => {
   const c = await loadConfig(roots, reader({
     "/code/app/.herdr/wool.yml": "version: 1\ntabs:\n\t- x\n",
@@ -70,7 +75,7 @@ test("loadConfig reports a schema error with its file", async () => {
 });
 
 test("loadConfig with no file returns null without an error", async () => {
-  assert.deepEqual(await loadConfig(roots, reader({})), { file: null, value: null, error: null });
+  assert.deepEqual(await loadConfig(roots, reader({})), { file: null, text: null, value: null, error: null });
 });
 
 test("loadConfig turns a failing read into an error for that file", async () => {

@@ -24,16 +24,16 @@ export async function loadConfig(roots, read) {
     try {
       text = await read(file);
     } catch (e) {
-      return { file, value: null, error: new ConfigError(file, `couldn't read the file: ${e?.message ?? e}`) };
+      return { file, text: null, value: null, error: new ConfigError(file, `couldn't read the file: ${e?.message ?? e}`) };
     }
     if (text === null || text === undefined) continue;
     try {
-      return { file, value: validateConfig(parseYaml(text), file), error: null };
+      return { file, text, value: validateConfig(parseYaml(text), file), error: null };
     } catch (e) {
-      if (e instanceof ConfigError) return { file, value: null, error: e };
-      if (e instanceof YamlError) return { file, value: null, error: new ConfigError(file, e.message) };
+      if (e instanceof ConfigError) return { file, text, value: null, error: e };
+      if (e instanceof YamlError) return { file, text, value: null, error: new ConfigError(file, e.message) };
       throw e;
     }
   }
-  return { file: null, value: null, error: null };
+  return { file: null, text: null, value: null, error: null };
 }

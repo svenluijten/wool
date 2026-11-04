@@ -47,7 +47,7 @@
   - Internal shell function `store_put <sha> <decision> <repo> <file>` used by Task 2.
   - `lib/trust.js`: `parseCheck(stdout: string): { verdict: "implicit"|"trusted"|"declined"|"ask", sha: string } | null`.
 
-- [ ] **Step 1: Write the failing tests** in `tests/trust.test.js` (each with its own `XDG_CONFIG_HOME` temp dir and a temp git repo + linked worktree, built like `tests/detect.test.js`'s claim fixtures):
+- [x] **Step 1: Write the failing tests** in `tests/trust.test.js` (each with its own `XDG_CONFIG_HOME` temp dir and a temp git repo + linked worktree, built like `tests/detect.test.js`'s claim fixtures):
   - `check: a dist with no entry asks` → stdout `ask\t<sha>` where sha equals `shasum -a 256` of `config.yml`; `trust-request` is `<repo>\t<file>\t<sha>\n`.
   - `check: a gitignored wool.yml is implicit` (repo `.gitignore` has `.herdr/*.yml`).
   - `check: a wool.yml that isn't ignored asks`.
@@ -60,10 +60,10 @@
   - `wool.sh: no trust subcommand` → `wool.sh trust x` exits 2, usage on stderr, store untouched.
   - `parseCheck` unit cases: valid line, trailing newline, unknown verdict → null, empty → null.
   - In `tests/config.test.js`: `loadConfig returns the text it read` (`c.text === CONFIG`), and `text: null` in the no-file case.
-- [ ] **Step 2: Run** `node --test tests/trust.test.js tests/config.test.js` — Expected: FAIL (`wool.sh` missing, `parseCheck` not exported, `text` undefined).
-- [ ] **Step 3: Implement** `wool.sh` (`check`, `list`, `forget`, `_put`, usage), `parseCheck` in `lib/trust.js`, and `text` in `loadConfig`. Lock: `mkdir "$dir/trust.lock"` retried every 0.1 s for up to 5 s, removed by trap; then read → filter out the key → append → write `trust.tsv.$$` → `mv`. A valid line has exactly 5 tab-separated fields, a 64-hex sha, and decision `trusted`/`declined`. Main checkout resolution as in `wool-claim.sh` (`--git-common-dir`, strip `/.git`, else `git worktree list --porcelain` first line).
-- [ ] **Step 4: Run** `npm test` — Expected: all pass.
-- [ ] **Step 5: Commit** `feat: trust store and gate check (wool.sh check/list/forget)`.
+- [x] **Step 2: Run** `node --test tests/trust.test.js tests/config.test.js` — Expected: FAIL (`wool.sh` missing, `parseCheck` not exported, `text` undefined).
+- [x] **Step 3: Implement** `wool.sh` (`check`, `list`, `forget`, `_put`, usage), `parseCheck` in `lib/trust.js`, and `text` in `loadConfig`. Lock: `mkdir "$dir/trust.lock"` retried every 0.1 s for up to 5 s, removed by trap; then read → filter out the key → append → write `trust.tsv.$$` → `mv`. A valid line has exactly 5 tab-separated fields, a 64-hex sha, and decision `trusted`/`declined`. Main checkout resolution as in `wool-claim.sh` (`--git-common-dir`, strip `/.git`, else `git worktree list --porcelain` first line).
+- [x] **Step 4: Run** `npm test` — Expected: all pass.
+- [x] **Step 5: Commit** `feat: trust store and gate check (wool.sh check/list/forget)`.
 
 ### Task 2: The interactive prompt
 
