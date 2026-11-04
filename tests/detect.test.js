@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, realpathSync, utimesSync, existsSync, statSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, utimesSync, existsSync, statSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -176,4 +176,51 @@ test("originalIsIdle: close the original tab only while its shell runs nothing",
   assert.equal(originalIsIdle(pane(), { argv: ["/bin/zsh", "-l"] }), true);
   assert.equal(originalIsIdle(undefined, idle), false);
   assert.equal(originalIsIdle(pane(), undefined), false);
+});
+
+// ---- wool-claim.sh rerun ----------------------------------------------
+
+const rerun = (folder) => {
+  const r = spawnSync("sh", [CLAIM, folder, "rerun"], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  return r.stdout.replace(/\n$/, "");
+};
+
+function oldWorktree(name) {
+  const { root, main } = repo();
+  const wt = join(root, name);
+  git(main, "worktree", "add", "-q", "-b", name, wt);
+  const gitdir = git(wt, "rev-parse", "--path-format=absolute", "--git-dir");
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+  utimesSync(join(gitdir, "commondir"), tenMinutesAgo, tenMinutesAgo);
+  return { main, wt, gitdir };
+}
+
+test("wool-claim rerun: claims a stale worktree", () => {
+  const { main, wt, gitdir } = oldWorktree("stale-one");
+  assert.equal(rerun(wt), `claimed\t${gitdir}\t${main}\tstale-one\t${wt}`);
+  assert.ok(statSync(join(gitdir, "wool")).isDirectory());
+});
+
+test("wool-claim rerun: clears old state and claims again", () => {
+  const { wt, gitdir } = oldWorktree("again");
+  mkdirSync(join(gitdir, "wool"));
+  writeFileSync(join(gitdir, "wool", "status"), "failed x\n");
+  writeFileSync(join(gitdir, "wool", "config.yml"), "version: 1\n");
+  assert.match(rerun(wt), /^claimed\t/);
+  assert.deepEqual(readdirSync(join(gitdir, "wool")), []);
+});
+
+test("wool-claim rerun: refuses while setup is running", () => {
+  const { wt, gitdir } = oldWorktree("busy");
+  mkdirSync(join(gitdir, "wool"));
+  writeFileSync(join(gitdir, "wool", "status"), "running\n");
+  writeFileSync(join(gitdir, "wool", "config.yml"), "version: 1\n");
+  assert.equal(rerun(wt), "running");
+  assert.equal(readFileSync(join(gitdir, "wool", "config.yml"), "utf8"), "version: 1\n");
+});
+
+test("wool-claim rerun: the main checkout is still not-linked", () => {
+  const { main } = repo();
+  assert.equal(rerun(main), "not-linked");
 });

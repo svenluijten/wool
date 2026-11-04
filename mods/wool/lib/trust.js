@@ -24,3 +24,10 @@ export function readAnswer(text) {
 export function promptTab(binDir, stateDir) {
   return { name: "wool", argv: ["sh", `${binDir}/wool.sh`, "prompt", stateDir] };
 }
+
+// The open local space for a worktree folder (wool.sh run), or null.
+export function spaceForFolder(spaces, folder) {
+  const norm = (p) => String(p ?? "").replace(/(.)\/$/, "$1");
+  const want = norm(folder);
+  return spaces.find((s) => (s.machine === null || s.machine === undefined) && s.folder && norm(s.folder) === want) ?? null;
+}

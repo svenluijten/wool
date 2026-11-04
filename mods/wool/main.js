@@ -10,19 +10,20 @@
 
 import { View, div } from "gpui-kit";
 import {
-  spaces, panes, terminals, focused, machines, run, exec, notify, knownAgents, readTextFile, appHome, home,
+  spaces, panes, terminals, focused, machines, run, exec, notify, knownAgents, readTextFile, appHome, home, watchFolder,
 } from "herdr";
 import { loadConfig } from "./lib/config.js";
 import { classifySpace, newSpaces, parseClaim, originalIsIdle, FRESH_MINUTES, PENDING_LIMIT_MS } from "./lib/detect.js";
 import { setupScript } from "./lib/shell.js";
 import { planLayout, planSetupOnly, pickAgent } from "./lib/plan.js";
-import { parseCheck, readAnswer, promptTab } from "./lib/trust.js";
+import { parseCheck, readAnswer, promptTab, spaceForFolder } from "./lib/trust.js";
 
 const STEP_TIMEOUT_MS = 5000;
 const STATUS_POLL_MS = 2000;
 const BG_POLL_MS = 5000;
 const ANSWER_POLL_MS = 500;
 const GONE_GRACE_MS = 2000;
+const REQUEST_POLL_MS = 5000;
 
 const tilde = (p) => (p && p.startsWith(home()) ? "~" + p.slice(home().length) : p);
 const base = (p) => String(p).split("/").pop();
@@ -46,6 +47,7 @@ export default class Wool extends View {
     this.known = null; // space ids wool has decided about (seeded on the first ready render)
     this.firstSeen = new Map(); // space id -> ms when first seen, while pending
     this.binDir = `${appHome()}/mods/wool/bin`;
+    this.asking = new Map(); // worktree -> wool tab's pane, while its prompt is open
   }
 
   render(cx) {
@@ -63,6 +65,7 @@ export default class Wool extends View {
       // Spaces that exist when wool starts (or reloads) are never handled.
       if (!localReady()) return;
       this.known = new Set(all.map((s) => s.id));
+      cx.spawn((cx) => this.watchRequests(cx));
       return;
     }
     const fresh = newSpaces(this.known, all);
@@ -108,6 +111,11 @@ export default class Wool extends View {
     }
     const wt = parseClaim(claimed.stdout);
     if (!wt) return; // not a linked worktree, made a while ago, or already handled
+    await this.prepareClaimed(cx, space, kind, shellHint, wt);
+  }
+
+  // After a claim (new space or wool.sh run): prepare, and say how to retry.
+  async prepareClaimed(cx, space, kind, shellHint, wt) {
     try {
       await this.prepare(cx, space, kind, shellHint, wt);
     } catch (e) {
@@ -166,6 +174,64 @@ export default class Wool extends View {
     if (bg > 0) await this.watchBackground(cx, wt, bg);
   }
 
+  // `wool.sh run <folder>` drops a request file; this takes them as they come
+  // (and those left while wool wasn't running, at start).
+  async watchRequests(cx) {
+    try {
+      const r = await exec("sh", ["-c", 'd="${XDG_CONFIG_HOME:-$HOME/.config}/wool/requests"; mkdir -p "$d" && printf %s "$d"']);
+      if (r.code !== 0) throw new Error(r.stderr.trim());
+      const dir = r.stdout;
+      for (;;) {
+        const t = await exec("sh", [`${this.binDir}/wool.sh`, "_take"]);
+        for (const top of t.stdout.split("\n").filter(Boolean)) {
+          cx.spawn(async (cx) => {
+            try {
+              await this.rerun(cx, top);
+            } catch (e) {
+              notify({ title: "wool: something went wrong", body: String(e?.message ?? e), level: "error" });
+            }
+          });
+        }
+        // The timer covers a watch that never fires (or was rejected).
+        await Promise.race([watchFolder(dir).catch(() => cx.sleep(REQUEST_POLL_MS)), cx.sleep(REQUEST_POLL_MS)]);
+      }
+    } catch (e) {
+      notify({ title: "wool: wool.sh run won't work", body: String(e?.message ?? e), level: "error" });
+    }
+  }
+
+  // Handles a worktree's space again, as if it were new: any age, old state
+  // cleared, and through the trust gate (run never trusts anything).
+  async rerun(cx, top) {
+    const space = spaceForFolder(spaces(), top);
+    if (!space) {
+      notify({ title: `wool: no open space for ${tilde(top)}`, body: "Open the worktree in Herdr, then run wool.sh run again.", level: "warning" });
+      return;
+    }
+    const pending = this.asking.get(top);
+    if (pending) {
+      notify({ title: "wool: already asking", body: `Answer in the wool tab of ${tilde(top)}.`, level: "info", action: { name: "pane.focus", args: { pane: pending } } });
+      return;
+    }
+    const claimed = await exec("sh", [`${this.binDir}/wool-claim.sh`, top, "rerun"]);
+    if (claimed.code !== 0) {
+      notify({ title: "wool: couldn't check the worktree", body: (claimed.stderr || claimed.stdout).trim(), level: "error" });
+      return;
+    }
+    if (claimed.stdout.trim() === "running") {
+      notify({ title: `wool: setup is already running in ${tilde(top)}`, level: "info" });
+      return;
+    }
+    const wt = parseClaim(claimed.stdout);
+    if (!wt) return;
+    // Classified now, as it is (never pending): one plain shell is laid out.
+    const now = Date.now();
+    const kind = classifySpace(space, panes(), terminals(), now - PENDING_LIMIT_MS, now);
+    this.known.add(space.id);
+    this.firstSeen.delete(space.id);
+    await this.prepareClaimed(cx, space, kind, this.shellOf(space, panes(), terminals()), wt);
+  }
+
   // True when what this worktree's config says may run. The text wool parsed
   // is written to the state dir and checksummed there, so what's asked about
   // is exactly what runs, whatever happens to the file meanwhile.
@@ -191,6 +257,16 @@ export default class Wool extends View {
     const tab = await waitFor(cx, () => [...tabIdsOf(space.id)].find((id) => !old.has(id)));
     const pane = tab && (await waitFor(cx, () => panes().find((p) => p.tab === tab)?.pane));
     if (!tab || !pane) throw new Error(`Herdr didn't create the wool tab within ${STEP_TIMEOUT_MS / 1000} s`);
+    this.asking.set(wt.worktree, pane);
+    try {
+      return await this.awaitAnswer(cx, space, kind, wt, file, before, tab, pane);
+    } finally {
+      this.asking.delete(wt.worktree);
+    }
+  }
+
+  async awaitAnswer(cx, space, kind, wt, file, before, tab, pane) {
+    const name = wt.branch || tilde(wt.worktree);
 
     if (kind !== "plain-shell") {
       // As with the Setup tab: don't take focus from what the person is doing.

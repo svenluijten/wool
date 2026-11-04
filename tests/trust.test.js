@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, realpathSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseCheck, readAnswer, promptTab } from "../mods/wool/lib/trust.js";
+import { parseCheck, readAnswer, promptTab, spaceForFolder } from "../mods/wool/lib/trust.js";
 
 const WOOL = join(dirname(fileURLToPath(import.meta.url)), "..", "mods", "wool", "bin", "wool.sh");
 const tmp = (name = "wool trust ") => realpathSync(mkdtempSync(join(tmpdir(), name)));
@@ -386,4 +386,82 @@ test("promptTab", () => {
   assert.deepEqual(promptTab("/m/bin", "/r/.git/worktrees/b/wool"), {
     name: "wool", argv: ["sh", "/m/bin/wool.sh", "prompt", "/r/.git/worktrees/b/wool"],
   });
+});
+
+// ---- wool.sh run -------------------------------------------------------
+
+const requestsOf = (fx) => join(fx.xdg, "wool", "requests");
+const requestFiles = (fx) => (existsSync(requestsOf(fx)) ? readdirSync(requestsOf(fx)) : []);
+
+test("run: writes a request with the worktree top", () => {
+  const fx = fixture();
+  mkdirSync(join(fx.wt, "src"));
+  const r = wool(fx, ["run", join(fx.wt, "src")]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, `Asked wool to set up ${fx.wt}.\n`);
+  const files = requestFiles(fx);
+  assert.equal(files.length, 1);
+  assert.match(files[0], /^\d+-\d+$/);
+  assert.equal(readFileSync(join(requestsOf(fx), files[0]), "utf8"), `${fx.wt}\n`);
+});
+
+test("run: refuses the main checkout", () => {
+  const fx = fixture();
+  const r = wool(fx, ["run", fx.main]);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /isn't a linked git worktree/);
+  assert.deepEqual(requestFiles(fx), []);
+});
+
+test("run: refuses a non-repo folder", () => {
+  const fx = fixture();
+  const r = wool(fx, ["run", tmp("plain ")]);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /isn't a linked git worktree/);
+  assert.deepEqual(requestFiles(fx), []);
+});
+
+test("_take: prints each request once and removes it", () => {
+  const fx = fixture();
+  assert.equal(wool(fx, ["_take"]).stdout, "");
+  wool(fx, ["run", fx.wt]);
+  wool(fx, ["run", fx.wt]);
+  const r = wool(fx, ["_take"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, `${fx.wt}\n${fx.wt}\n`);
+  assert.deepEqual(requestFiles(fx), []);
+  assert.equal(wool(fx, ["_take"]).stdout, "");
+});
+
+ptyTest("prompt: an answer to an out-of-date question is not used", async () => {
+  // wool asked again (wool.sh run) while this old prompt stayed open.
+  const fx = fixture();
+  writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha(CONFIG)}\n`);
+  const c = spawn("sh", ["-c", 'cat | script -q /dev/null sh "$0" prompt "$1"', WOOL, fx.state], {
+    env: { ...process.env, XDG_CONFIG_HOME: fx.xdg }, stdio: ["pipe", "pipe", "pipe"], detached: true,
+  });
+  let out = "";
+  c.stdout.on("data", (d) => (out += d));
+  const exited = new Promise((r) => c.on("exit", r));
+  assert.ok(await until(() => out.includes(QUESTION)), out);
+  writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha("newer")}\n`);
+  c.stdin.write("t\n");
+  await until(() => out.includes("out of date"), 3000);
+  c.stdin.end();
+  await exited;
+  assert.match(out, /out of date/);
+  assert.equal(answer(fx), null);
+  assert.deepEqual(storeLines(fx), []);
+});
+
+test("spaceForFolder", () => {
+  const sp = (id, folder, machine = null) => ({ id, folder, machine, tabs: [] });
+  const all = [sp("a", "/x/one"), sp("r", "/x/two", "vps"), sp("b", "/x/two/"), sp("c", "/x/three")];
+  assert.equal(spaceForFolder(all, "/x/one").id, "a");
+  assert.equal(spaceForFolder(all, "/x/one/").id, "a");
+  assert.equal(spaceForFolder(all, "/x/two").id, "b");
+  assert.equal(spaceForFolder([sp("r", "/x/two", "vps")], "/x/two"), null);
+  assert.equal(spaceForFolder([{ id: "u", folder: "/x/u", tabs: [] }], "/x/u").id, "u");
+  assert.equal(spaceForFolder(all, "/x/none"), null);
+  assert.equal(spaceForFolder(all, "/x"), null);
 });

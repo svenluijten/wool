@@ -121,14 +121,14 @@
   - `lib/trust.js`: `spaceForFolder(spaces, folder): Space | null` (local spaces only: `machine` null/undefined; match `space.folder === folder` after stripping one trailing `/`).
   - main.js `watchRequests(cx)` started once when `known` is first seeded; handles files already present, then loops on `watchFolder(dir)` with a 5 s timer fallback.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
   - `run: writes a request with the worktree top` (from a subfolder of the worktree), `run: refuses the main checkout`, `run: refuses a non-repo folder`.
   - `wool-claim rerun: claims a stale worktree`, `wool-claim rerun: clears old state and claims again` (state dir with `status` `failed x` and a `config.yml` → gone, re-created empty), `wool-claim rerun: refuses while setup is running` → `running`, state untouched.
   - `spaceForFolder`: match, trailing slash, remote skipped, none → null.
-- [ ] **Step 2: Run** `node --test tests/trust.test.js tests/detect.test.js` — Expected: FAIL on the new tests.
-- [ ] **Step 3: Implement.** In main.js, each request: read it, delete it, `spaceForFolder(spaces(), top)`; none → warning `wool: no open space for <~folder>` / `Open the worktree in Herdr, then run wool.sh run again.`; else claim with `wool-claim.sh <top> rerun` (`running` → info `wool: setup is already running in <branch>`), classify with `classifySpace(space, panes(), terminals(), now - PENDING_LIMIT_MS, now)` (so it never stays pending), add the space to `known`, and continue into `prepare()` exactly as `handle()` does after its claim (factor the shared part out of `handle` rather than duplicating it). The requests dir comes from `exec sh -c 'printf %s "${XDG_CONFIG_HOME:-$HOME/.config}/wool/requests"'` and is created with `mkdir -p`.
-- [ ] **Step 4: Run** `npm test` and `herdr-app check …/feat-trust/mods/wool` — Expected: all pass.
-- [ ] **Step 5: Commit** `feat: wool.sh run sets up an existing worktree again`.
+- [x] **Step 2: Run** `node --test tests/trust.test.js tests/detect.test.js` — Expected: FAIL on the new tests.
+- [x] **Step 3: Implement.** In main.js, each request: read it, delete it, `spaceForFolder(spaces(), top)`; none → warning `wool: no open space for <~folder>` / `Open the worktree in Herdr, then run wool.sh run again.`; else claim with `wool-claim.sh <top> rerun` (`running` → info `wool: setup is already running in <branch>`), classify with `classifySpace(space, panes(), terminals(), now - PENDING_LIMIT_MS, now)` (so it never stays pending), add the space to `known`, and continue into `prepare()` exactly as `handle()` does after its claim (factor the shared part out of `handle` rather than duplicating it). The requests dir comes from `exec sh -c 'printf %s "${XDG_CONFIG_HOME:-$HOME/.config}/wool/requests"'` and is created with `mkdir -p`.
+- [x] **Step 4: Run** `npm test` and `herdr-app check …/feat-trust/mods/wool` — Expected: all pass.
+- [x] **Step 5: Commit** `feat: wool.sh run sets up an existing worktree again`.
 
 ### Task 5: Docs and live acceptance
 

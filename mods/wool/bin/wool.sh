@@ -3,6 +3,7 @@
 #
 #   wool.sh list               every trusted or declined file
 #   wool.sh forget <folder>    forget every decision for <folder>'s repo
+#   wool.sh run <folder>       set up <folder>'s worktree again (asks first if needed)
 #   wool.sh prompt <state dir> ask about a worktree's config (wool runs this)
 #
 # wool itself runs `wool.sh check` and `wool.sh prompt`. There is deliberately no `trust`
@@ -16,12 +17,14 @@ set -u
 dir="${XDG_CONFIG_HOME:-$HOME/.config}/wool"
 store="$dir/trust.tsv"
 lockdir="$dir/trust.lock"
+requests="$dir/requests"
 locked=
 
 usage() {
   cat >&2 <<'EOF'
 usage: wool.sh list
        wool.sh forget <folder>
+       wool.sh run <folder>
        wool.sh prompt <state dir>
 EOF
   exit 2
@@ -212,6 +215,14 @@ cmd_prompt() {
     break
   done
 
+  # wool asked again (wool.sh run) while this prompt stayed open: this
+  # answer is about a question wool no longer waits for.
+  if [ "$(cat "$state/trust-request" 2>/dev/null)" != "$request" ]; then
+    printf '\nThis question is out of date (wool asked again in another tab). Nothing was saved.\n'
+    answered=1
+    exit 1
+  fi
+
   case $choice in
     trust) store_put "$sum" trusted "$repo" "$file" ;;
     decline) store_put "$sum" declined "$repo" "$file" ;;
@@ -228,6 +239,37 @@ cmd_prompt() {
   fi
 }
 
+# wool.sh run <folder>: asks the running wool to set up a worktree again.
+cmd_run() {
+  [ $# -eq 1 ] || usage
+  dirs=$(git -C "$1" rev-parse --path-format=absolute --git-dir --git-common-dir 2>/dev/null) || dirs=
+  gitdir=$(printf '%s\n' "$dirs" | sed -n 1p)
+  common=$(printf '%s\n' "$dirs" | sed -n 2p)
+  if [ -z "$gitdir" ] || [ -z "$common" ] || [ "$gitdir" = "$common" ]; then
+    die "run: $1 isn't a linked git worktree"
+  fi
+  top=$(git -C "$1" rev-parse --show-toplevel) || die "run: can't find the top of $1"
+  mkdir -p "$requests" || die "run: can't create $requests"
+  name="$(date +%s)-$$"
+  printf '%s\n' "$top" > "$requests/.$name.tmp" && mv -f "$requests/.$name.tmp" "$requests/$name" \
+    || { rm -f "$requests/.$name.tmp"; die "run: can't write to $requests"; }
+  printf 'Asked wool to set up %s.\n' "$top"
+}
+
+# wool.sh _take (wool runs this): prints each pending request's folder and
+# removes it. A request is taken with mv, so two copies of wool never both
+# take one.
+cmd_take() {
+  [ -d "$requests" ] || return 0
+  for f in "$requests"/*; do
+    [ -f "$f" ] || continue
+    t="$requests/.taken.$$.${f##*/}"
+    mv "$f" "$t" 2>/dev/null || continue
+    sed -n 1p "$t"
+    rm -f "$t"
+  done
+}
+
 [ $# -ge 1 ] || usage
 sub=$1
 shift
@@ -235,7 +277,9 @@ case $sub in
   check) cmd_check "$@" ;;
   list) cmd_list "$@" ;;
   forget) cmd_forget "$@" ;;
+  run) cmd_run "$@" ;;
   prompt) cmd_prompt "$@" ;;
+  _take) cmd_take ;;
   _put) # for tests only
     [ $# -eq 4 ] || usage
     store_put "$@" ;;
