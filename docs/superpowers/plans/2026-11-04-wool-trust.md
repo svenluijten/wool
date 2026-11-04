@@ -136,8 +136,8 @@
 - Modify: `README.md`, `RECIPE.md`
 - Create: `docs/notes/trust-acceptance.md`
 
-- [ ] **Step 1: README** — new "Trust" section (the three answers; what's gated; gitignored `wool.yml` is trusted; a changed file asks again; `wool.sh list` / `forget` / `run` with full `sh ~/.config/herdr-app/mods/wool/bin/wool.sh …` commands; the store path; agents may use `list`/`forget`/`run`, and there is deliberately no `trust` command; the plain warning that this stops the easy path, not a determined process running as you). Update "Security and trust", "Errors and failures" (retry is `wool.sh run`), "What you see"/"How it behaves"/"Done when" in RECIPE.
-- [ ] **Step 2: Live acceptance** (symlink switched to this worktree, wool restarted, `XDG` left as the real one; back up `~/.config/wool/trust.tsv` first if it exists and restore it after). Record each result in `docs/notes/trust-acceptance.md`:
+- [x] **Step 1: README** — new "Trust" section (the three answers; what's gated; gitignored `wool.yml` is trusted; a changed file asks again; `wool.sh list` / `forget` / `run` with full `sh ~/.config/herdr-app/mods/wool/bin/wool.sh …` commands; the store path; agents may use `list`/`forget`/`run`, and there is deliberately no `trust` command; the plain warning that this stops the easy path, not a determined process running as you). Update "Security and trust", "Errors and failures" (retry is `wool.sh run`), "What you see"/"How it behaves"/"Done when" in RECIPE.
+- [x] **Step 2: Live acceptance** (symlink switched to this worktree, wool restarted, `XDG` left as the real one; back up `~/.config/wool/trust.tsv` first if it exists and restore it after). Record each result in `docs/notes/trust-acceptance.md`:
   1. New quiz worktree, no entry → `wool` tab with the file; nothing else runs (no Server, no agent) while it waits.
   2. `t` → prompt tab closes, layout + setup as before; `wool.sh list` shows `trusted`.
   3. Another new worktree → no prompt, runs directly.
@@ -146,6 +146,6 @@
   6. `wool.sh forget ~/Code/github.com/svenluijten/quiz` then `wool.sh run <that worktree>` → prompt appears again.
   7. Personal gitignored `wool.yml` in quiz main (if quiz's `.gitignore` doesn't ignore it, say so and test with `.git/info/exclude`) → no prompt.
   8. Close the prompt tab without answering → `none` notification with the `wool.sh run` hint.
-- [ ] **Step 3: Clean up** — remove test worktrees/branches, restore quiz's `.dist`, remove any personal `wool.yml`, restore the trust store, point the symlink back at the main checkout, restart wool, `herdr-app status` shows `"wool"`.
-- [ ] **Step 4: Run** `npm test` — Expected: all pass.
-- [ ] **Step 5: Commit** `docs: trust in README and RECIPE, acceptance notes`.
+- [x] **Step 3: Clean up** — remove test worktrees/branches, restore quiz's `.dist`, remove any personal `wool.yml`, restore the trust store, point the symlink back at the main checkout, restart wool, `herdr-app status` shows `"wool"`.
+- [x] **Step 4: Run** `npm test` — Expected: all pass.
+- [x] **Step 5: Commit** `docs: trust in README and RECIPE, acceptance notes`.

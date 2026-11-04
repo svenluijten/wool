@@ -78,6 +78,9 @@ unlock() {
 answered=1
 nonce=
 finish() {
+  # Herdr closing a tab sends HUP more than once: don't let a second one cut
+  # this short.
+  trap '' HUP INT TERM
   unlock
   if [ -z "$answered" ] && [ -n "$nonce" ] && [ "$(cat "$state/trust-request" 2>/dev/null)" = "$request" ]; then
     printf 'none\t%s\n' "$nonce" > "$state/trust-answer"
@@ -179,7 +182,7 @@ cmd_prompt() {
   # Closed, hung up, Ctrl-C'd or failed without an answer: finish() answers
   # none (nothing saved, nothing runs).
   answered=
-  trap 'exit 130' HUP INT TERM
+  trap 'trap "" HUP INT TERM; exit 130' HUP INT TERM
   give_up() {
     printf '%s\n' "$1"
     exit 1

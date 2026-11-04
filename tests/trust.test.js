@@ -211,6 +211,17 @@ async function prompt(fx, answers, then = null) {
     assert.ok(await until(() => count(out, QUESTION) > i), `question never showed:\n${out}`);
     await new Promise((r) => setTimeout(r, 50));
     if (then === "hup") process.kill(-c.pid, "SIGHUP"); // the terminal goes away
+    if (then === "hup-twice") {
+      // Herdr closing a tab sends HUP more than once, the second while the
+      // first one's exit handler is still running.
+      const pid = execFileSync("pgrep", ["-f", `wool.sh prompt ${fx.state}$`], { encoding: "utf8" }).trim().split("\n").pop();
+      for (let i = 0; i < 40; i++) {
+        try { process.kill(Number(pid), "SIGHUP"); } catch {}
+        await new Promise((r) => setTimeout(r, 1));
+      }
+      await new Promise((r) => setTimeout(r, 300));
+      process.kill(-c.pid, "SIGHUP");
+    }
     if (then === "int") c.stdin.write("\x03");
   }
   // Let cat (and so script) finish once the prompt has its answer.
@@ -290,6 +301,13 @@ ptyTest("prompt: hang-up writes none", async () => {
   assert.ok(await until(() => answer(fx) !== null), "no trust-answer");
   assert.equal(answer(fx), "none\tn1\n");
   assert.deepEqual(storeLines(fx), []);
+});
+
+ptyTest("prompt: repeated hang-ups still write none", async () => {
+  const fx = fixture();
+  await prompt(fx, [], "hup-twice");
+  assert.ok(await until(() => answer(fx) !== null), "no trust-answer");
+  assert.equal(answer(fx), "none\tn1\n");
 });
 
 ptyTest("prompt: Ctrl-C writes none", async () => {
