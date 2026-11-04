@@ -10,3 +10,17 @@ export function parseCheck(stdout) {
   if (rest.length > 0 || !VERDICTS.has(verdict) || !/^[0-9a-f]{64}$/.test(sha ?? "")) return null;
   return { verdict, sha };
 }
+
+const ANSWERS = new Set(["trust", "once", "decline", "none"]);
+
+// Reads <state dir>/trust-answer as `wool.sh prompt` writes it; null until
+// there is a known answer.
+export function readAnswer(text) {
+  const word = String(text ?? "").replace(/\r?\n$/, "");
+  return ANSWERS.has(word) ? word : null;
+}
+
+// The tab wool adds to a space to ask about its config.
+export function promptTab(binDir, stateDir) {
+  return { name: "wool", argv: ["sh", `${binDir}/wool.sh`, "prompt", stateDir] };
+}

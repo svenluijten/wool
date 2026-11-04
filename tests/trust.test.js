@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, realpa
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseCheck } from "../mods/wool/lib/trust.js";
+import { parseCheck, readAnswer, promptTab } from "../mods/wool/lib/trust.js";
 
 const WOOL = join(dirname(fileURLToPath(import.meta.url)), "..", "mods", "wool", "bin", "wool.sh");
 const tmp = (name = "wool trust ") => realpathSync(mkdtempSync(join(tmpdir(), name)));
@@ -367,4 +367,23 @@ test("prompt: refuses without a terminal", () => {
   assert.match(r.stderr, /needs a terminal/);
   assert.equal(answer(fx), null);
   assert.deepEqual(storeLines(fx), []);
+});
+
+// ---- main.js helpers ---------------------------------------------------
+
+test("readAnswer", () => {
+  for (const w of ["trust", "once", "decline", "none"]) {
+    assert.equal(readAnswer(w), w);
+    assert.equal(readAnswer(w + "\n"), w);
+  }
+  assert.equal(readAnswer(null), null);
+  assert.equal(readAnswer(""), null);
+  assert.equal(readAnswer("maybe\n"), null);
+  assert.equal(readAnswer("tru"), null);
+});
+
+test("promptTab", () => {
+  assert.deepEqual(promptTab("/m/bin", "/r/.git/worktrees/b/wool"), {
+    name: "wool", argv: ["sh", "/m/bin/wool.sh", "prompt", "/r/.git/worktrees/b/wool"],
+  });
 });

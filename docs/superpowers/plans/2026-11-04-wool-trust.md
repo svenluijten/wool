@@ -98,16 +98,16 @@
   - `lib/trust.js`: `readAnswer(text: string | null): "trust"|"once"|"decline"|"none"|null` (null while not answered / unknown word); `promptTab(binDir, stateDir): { name: "wool", argv: ["sh", `${binDir}/wool.sh`, "prompt", stateDir] }`.
   - main.js `askTrust(cx, space, kind, wt, file): Promise<boolean>` (true = go on).
 
-- [ ] **Step 1: Write the failing tests** for `readAnswer` (each word, with trailing newline, `null`, `""`, `"maybe"`) and `promptTab` (exact argv).
-- [ ] **Step 2: Run** `node --test tests/trust.test.js` — Expected: FAIL (not exported).
-- [ ] **Step 3: Implement** the helpers, then in `prepare()`, after the `if (!hasSetup && !layout) return;` line and before `setup.sh` is written:
+- [x] **Step 1: Write the failing tests** for `readAnswer` (each word, with trailing newline, `null`, `""`, `"maybe"`) and `promptTab` (exact argv).
+- [x] **Step 2: Run** `node --test tests/trust.test.js` — Expected: FAIL (not exported).
+- [x] **Step 3: Implement** the helpers, then in `prepare()`, after the `if (!hasSetup && !layout) return;` line and before `setup.sh` is written:
   1. write `config.text` to `${wt.stateDir}/config.yml` (same `exec printf` way as `setup.sh`);
   2. `exec("sh", [wool.sh, "check", stateDir, wt.main, config.file])` → `parseCheck`; failure → throw (the existing "stopped" notification);
   3. `implicit`/`trusted` → go on; `declined` → return silently; `ask` → `askTrust`.
   `askTrust`: `run("tab.new", { space, name: "wool", folder: wt.worktree, argv })`, find the new tab/pane by diffing (as `execute` does). `kind === "plain-shell"`: leave focus on it. Otherwise: give focus back to what had it (`focused()` before), and `notify({ title: "wool: trust needed for <repo basename>", body: "Answer in the wool tab of <branch>.", level: "warning", action: { name: "pane.focus", args: { pane } } })`. Poll `trust-answer` every 500 ms with `readAnswer` until non-null (no timeout). Then `run("tab.close", { id: tab, confirmed: true })`. `trust`/`once` → true. `decline` → info notify `wool: skipped <branch>` / `You declined .herdr/<file> for <repo>.`; `none` → info notify `wool: skipped <branch>` / `No answer. To ask again: sh "<bin>/wool.sh" run "<worktree>"`; both → false.
   Change the "stopped" notification's retry line to `To try again: sh "<bin>/wool.sh" run "<worktree>"`.
-- [ ] **Step 4: Run** `npm test` and `herdr-app check ~/.herdr/worktrees/wool/feat-trust/mods/wool` — Expected: all pass, `check passed`.
-- [ ] **Step 5: Commit** `feat: ask before running an untrusted wool.yml`.
+- [x] **Step 4: Run** `npm test` and `herdr-app check ~/.herdr/worktrees/wool/feat-trust/mods/wool` — Expected: all pass, `check passed`.
+- [x] **Step 5: Commit** `feat: ask before running an untrusted wool.yml`.
 
 ### Task 4: `wool.sh run` and re-run requests
 
