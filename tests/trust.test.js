@@ -7,7 +7,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseCheck, readAnswer, requestNonce, promptTab, spaceForFolder } from "../mods/wool/lib/trust.js";
 
-const WOOL = join(dirname(fileURLToPath(import.meta.url)), "..", "mods", "wool", "bin", "wool.sh");
+const WOOL = join(dirname(fileURLToPath(import.meta.url)), "..", "mods", "wool", "bin", "wool-trust.sh");
 const tmp = (name = "wool trust ") => realpathSync(mkdtempSync(join(tmpdir(), name)));
 const CONFIG = "version: 1\nsetup:\n  - run: echo hi\n";
 const NONCE = "n1"; // what main.js passes to check, once per question
@@ -49,7 +49,7 @@ function check(fx) {
   return r.stdout;
 }
 
-// A decision as the prompt stores it (wool.sh has no command that writes one).
+// A decision as the prompt stores it (wool-trust.sh has no command that writes one).
 function put(fx, s, decision, repo = fx.main, file = fx.path) {
   mkdirSync(dirname(fx.store), { recursive: true });
   const old = existsSync(fx.store) ? readFileSync(fx.store, "utf8") : "";
@@ -149,7 +149,7 @@ test("forget: a folder that isn't a repo is an error", () => {
   assert.match(r.stderr, /git/);
 });
 
-test("wool.sh: no trust subcommand", () => {
+test("wool-trust.sh: no trust subcommand", () => {
   const fx = fixture();
   for (const args of [["trust", fx.wt], [], ["nope"], ["_put", sha(CONFIG), "trusted", fx.main, fx.path]]) {
     const r = wool(fx, args);
@@ -171,7 +171,7 @@ test("parseCheck", () => {
   assert.equal(parseCheck(null), null);
 });
 
-// ---- wool.sh prompt ----------------------------------------------------
+// ---- wool-trust.sh prompt ----------------------------------------------------
 
 const QUESTION = "[d]ecline  trust [o]nce  [t]rust project";
 const BSD_SCRIPT = process.platform === "darwin" || process.platform === "freebsd";
@@ -214,7 +214,7 @@ async function prompt(fx, answers, then = null) {
     if (then === "hup-twice") {
       // Herdr closing a tab sends HUP more than once, the second while the
       // first one's exit handler is still running.
-      const pid = execFileSync("pgrep", ["-f", `wool.sh prompt ${fx.state}$`], { encoding: "utf8" }).trim().split("\n").pop();
+      const pid = execFileSync("pgrep", ["-f", `wool-trust.sh prompt ${fx.state}$`], { encoding: "utf8" }).trim().split("\n").pop();
       for (let i = 0; i < 40; i++) {
         try { process.kill(Number(pid), "SIGHUP"); } catch {}
         await new Promise((r) => setTimeout(r, 1));
@@ -253,7 +253,7 @@ ptyTest("prompt: t trusts the project", async () => {
   const lines = storeLines(fx);
   assert.equal(lines.length, 1);
   assert.deepEqual(lines[0].split("\t").slice(0, 4), [sha(CONFIG), "trusted", fx.main, fx.path]);
-  assert.match(out, /wool\.sh" run/);
+  assert.match(out, /wool-trust\.sh" run/);
   assert.ok(out.includes(fx.wt), out);
 });
 
@@ -263,7 +263,7 @@ ptyTest("prompt: o trusts once", async () => {
   assert.equal(code, 0, out);
   assert.equal(answer(fx), "once\tn1\n");
   assert.deepEqual(storeLines(fx), []);
-  assert.match(out, /wool\.sh" run/);
+  assert.match(out, /wool-trust\.sh" run/);
 });
 
 ptyTest("prompt: d declines", async () => {
@@ -272,8 +272,8 @@ ptyTest("prompt: d declines", async () => {
   assert.equal(code, 0, out);
   assert.equal(answer(fx), "decline\tn1\n");
   assert.deepEqual(storeLines(fx)[0].split("\t").slice(0, 2), [sha(CONFIG), "declined"]);
-  assert.match(out, /wool\.sh" forget/);
-  assert.match(out, /wool\.sh" run/);
+  assert.match(out, /wool-trust\.sh" forget/);
+  assert.match(out, /wool-trust\.sh" run/);
 });
 
 ptyTest("prompt: anything else asks again", async () => {
@@ -363,11 +363,11 @@ test("requestNonce", () => {
 
 test("promptTab", () => {
   assert.deepEqual(promptTab("/m/bin", "/r/.git/worktrees/b/wool"), {
-    name: "wool", argv: ["sh", "/m/bin/wool.sh", "prompt", "/r/.git/worktrees/b/wool"],
+    name: "wool", argv: ["sh", "/m/bin/wool-trust.sh", "prompt", "/r/.git/worktrees/b/wool"],
   });
 });
 
-// ---- wool.sh run -------------------------------------------------------
+// ---- wool-trust.sh run -------------------------------------------------------
 
 const requestsOf = (fx) => join(fx.xdg, "wool", "requests");
 const requestFiles = (fx) => (existsSync(requestsOf(fx)) ? readdirSync(requestsOf(fx)) : []);
@@ -413,7 +413,7 @@ test("_take: prints each request once and removes it", () => {
 });
 
 ptyTest("prompt: an answer to an out-of-date question is not used", async () => {
-  // wool asked again (wool.sh run) while this old prompt stayed open.
+  // wool asked again (wool-trust.sh run) while this old prompt stayed open.
   const fx = fixture();
   writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha(CONFIG)}\t${NONCE}\n`);
   const c = spawn("sh", ["-c", 'cat | script -q /dev/null sh "$0" prompt "$1"', WOOL, fx.state], {

@@ -31,16 +31,16 @@ works as it does today, without asking again, until the file changes.
 - A **gitignored** personal `wool.yml` is trusted implicitly: you wrote it.
 - A **non-gitignored** `wool.yml` (committed, or untracked but not ignored) goes
   through the gate like a `.dist`.
-- Undo from a terminal: `wool.sh list` and `wool.sh forget <repo>`.
-- Re-run wool on an existing worktree: `wool.sh run <folder>` (goes through
+- Undo from a terminal: `wool-trust.sh list` and `wool-trust.sh forget <repo>`.
+- Re-run wool on an existing worktree: `wool-trust.sh run <folder>` (goes through
   the gate like a new worktree).
 
 ## Non-goals
 
 - Showing a diff against the previously trusted version (the prompt shows the
   whole file).
-- Trusting from the command line. `wool.sh` has no `trust` subcommand, on
-  purpose: an agent told to "run wool.sh trust" (by a README, a task, a
+- Trusting from the command line. `wool-trust.sh` has no `trust` subcommand, on
+  purpose: an agent told to "run wool-trust.sh trust" (by a README, a task, a
   malicious repo) must not be able to. Agents may use `list` and `forget`.
 - Signing, per-user allowlists of authors, or anything network-based.
 - Trust for remote spaces (wool skips them already).
@@ -127,7 +127,7 @@ One file of wool's own, outside the mod folder so reinstalling wool keeps it:
 
 After the claim and a valid config, when the file is gated and has no
 entry, wool adds **one tab named `wool`** to the new space instead of doing
-anything else. Its terminal runs `sh <bin>/wool.sh prompt <state dir>`, which:
+anything else. Its terminal runs `sh <bin>/wool-trust.sh prompt <state dir>`, which:
 
 1. Prints which repo and file this is, the checksum, and the file's
    contents (from `<state dir>/config.yml`).
@@ -137,15 +137,15 @@ anything else. Its terminal runs `sh <bin>/wool.sh prompt <state dir>`, which:
    `trust`) and, for `decline` and `trust`, the store line.
 4. After `trust` or `once`, prints that wool is setting up the worktree, and
    that if nothing happens (wool restarted while the prompt was open) to run
-   `sh <bin>/wool.sh run <worktree>`. After `decline`, prints how to undo it
-   (`wool.sh forget`, then `wool.sh run`).
+   `sh <bin>/wool-trust.sh run <worktree>`. After `decline`, prints how to undo it
+   (`wool-trust.sh forget`, then `wool-trust.sh run`).
 5. Exits.
 
 If the terminal closes or Ctrl-C ends the prompt without an answer, nothing
 is saved and nothing runs for this worktree (treated like a decline that
 isn't remembered); `<state dir>/trust-answer` gets `none`.
 
-`wool.sh prompt` refuses to run when stdin isn't a terminal.
+`wool-trust.sh prompt` refuses to run when stdin isn't a terminal.
 
 wool (main.js) waits for `trust-answer` by polling it, as it polls `status`
 today. Then:
@@ -167,30 +167,30 @@ Focus and notice:
 While the prompt waits, the space's original tab stays as it arrived and
 usable. The agent from the layout does **not** start until you trust.
 
-### `wool.sh`
+### `wool-trust.sh`
 
-`mods/wool/bin/wool.sh`, POSIX `sh`:
+`mods/wool/bin/wool-trust.sh`, POSIX `sh`:
 
-- `wool.sh list`: every store entry, readable (decision, repo, file, date,
+- `wool-trust.sh list`: every store entry, readable (decision, repo, file, date,
   short checksum). Empty store: says so.
-- `wool.sh forget <folder>`: removes every entry for the repo that `<folder>`
+- `wool-trust.sh forget <folder>`: removes every entry for the repo that `<folder>`
   belongs to (any checkout of it: resolve the main checkout through git), and
   says how many. Next worktree asks again.
-- `wool.sh run <folder>`: re-runs wool for the worktree `<folder>` belongs to
+- `wool-trust.sh run <folder>`: re-runs wool for the worktree `<folder>` belongs to
   (see below). Says the request was sent.
-- `wool.sh prompt <state dir>`: the interactive prompt above (wool runs it;
+- `wool-trust.sh prompt <state dir>`: the interactive prompt above (wool runs it;
   you normally don't).
 - No `trust` subcommand. Unknown subcommand: usage on stderr, exit 2.
 
-### Re-running: `wool.sh run`
+### Re-running: `wool-trust.sh run`
 
 The claim (`mkdir <git-dir>/wool`) is taken before the prompt, and `setup.sh`
 is written only after trust, so a worktree whose prompt ended without trust
 (declined, prompt closed, or wool restarted while it was open) would otherwise
-never be set up. `wool.sh run` is the one way back for all three; wool does
+never be set up. `wool-trust.sh run` is the one way back for all three; wool does
 **not** reconnect to prompts that were open when it restarted.
 
-- `wool.sh run <folder>` resolves the worktree (linked worktree only; the
+- `wool-trust.sh run <folder>` resolves the worktree (linked worktree only; the
   main checkout or a non-repo folder is an error on stderr, exit 1) and writes
   a request file into `${XDG_CONFIG_HOME:-$HOME/.config}/wool/requests/`
   naming the worktree's top folder.
@@ -209,7 +209,7 @@ never be set up. `wool.sh run` is the one way back for all three; wool does
 ### Docs
 
 README: a "Trust" section (the three answers, what's gated, gitignored
-`wool.yml` is trusted, changes ask again, `wool.sh list` / `forget` / `run`, where the
+`wool.yml` is trusted, changes ask again, `wool-trust.sh list` / `forget` / `run`, where the
 store lives, and the plain warning that this stops the easy path, not a
 determined process running as you). Update "Security and trust", "Errors and
 failures" and RECIPE to match.
@@ -226,7 +226,7 @@ failures" and RECIPE to match.
   the way `tests/shell.test.js` tests the other scripts.
 - Whether `wool-run.sh` by hand (the existing retry command) needs a guard:
   it runs `setup.sh`, which wool only writes after trust, so probably not.
-  The "stopped" notification's retry hint may point at `wool.sh run` instead.
+  The "stopped" notification's retry hint may point at `wool-trust.sh run` instead.
 - Concurrency of two prompts writing the store at once (lock or
   read-modify-`mv` retry), and escaping terminal control characters when the
   prompt prints the file.

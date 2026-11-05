@@ -1,6 +1,6 @@
 #!/bin/sh
 # wool-claim.sh <folder> [fresh-minutes]
-# wool-claim.sh <folder> rerun     (wool.sh run: any age, old state cleared)
+# wool-claim.sh <folder> rerun     (wool-trust.sh run: any age, old state cleared)
 # Prints exactly one line:
 #   not-linked                                   not a linked git worktree
 #   stale                                        made more than [fresh-minutes] (3) ago

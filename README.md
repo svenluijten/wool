@@ -240,9 +240,9 @@ about.
 From a terminal:
 
 ```sh
-sh ~/.config/herdr-app/mods/wool/bin/wool.sh list               # every trusted and declined file
-sh ~/.config/herdr-app/mods/wool/bin/wool.sh forget <folder>    # forget every decision for <folder>'s repo
-sh ~/.config/herdr-app/mods/wool/bin/wool.sh run <folder>       # set up that worktree again (asks again if needed)
+sh ~/.config/herdr-app/mods/wool/bin/wool-trust.sh list               # every trusted and declined file
+sh ~/.config/herdr-app/mods/wool/bin/wool-trust.sh forget <folder>    # forget every decision for <folder>'s repo
+sh ~/.config/herdr-app/mods/wool/bin/wool-trust.sh run <folder>       # set up that worktree again (asks again if needed)
 ```
 
 `run` is the way back after declining (`forget`, then `run`), after closing
@@ -302,7 +302,7 @@ background logs, and the copy of the config it checksummed (`config.yml`).
 It never shows in `git status` and goes away with `git worktree remove`.
 Setup runs once per worktree. To run wool for it again (through the trust
 gate, as for a new worktree), in any terminal:
-`sh ~/.config/herdr-app/mods/wool/bin/wool.sh run <that folder>`.
+`sh ~/.config/herdr-app/mods/wool/bin/wool-trust.sh run <that folder>`.
 - **Something goes wrong after `wool` claimed the worktree** (before setup
   started): a notification says what, and gives that same command.
 - **You declined, or closed the prompt:** an info notification says wool

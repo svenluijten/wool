@@ -35,9 +35,9 @@ function setup({ onTab } = {}) {
   return { wool, cx, space, wt, config, state, root };
 }
 
-// Answers the prompt the way wool.sh prompt would, once wool's tab exists.
+// Answers the prompt the way wool-trust.sh prompt would, once wool's tab exists.
 const answering = (word) => (id, args) => {
-  assert.deepEqual(args.argv.slice(1), [`${globalThis.herdr.appHome}/mods/wool/bin/wool.sh`, "prompt", args.argv[3]]);
+  assert.deepEqual(args.argv.slice(1), [`${globalThis.herdr.appHome}/mods/wool/bin/wool-trust.sh`, "prompt", args.argv[3]]);
   const state = args.argv[3];
   const nonce = readFileSync(join(state, "trust-request"), "utf8").trim().split("\t")[3];
   setTimeout(() => writeFileSync(join(state, "trust-answer"), `${word}\t${nonce}\n`), 30);
@@ -68,7 +68,7 @@ test("gate: decline runs nothing and says so", async () => {
 test("gate: no answer runs nothing and gives the run command", async () => {
   const t = setup({ onTab: answering("none") });
   assert.equal(await t.wool.gate(t.cx, t.space, "plain-shell", t.wt, t.config), false);
-  assert.match(globalThis.herdr.notes[0].body, /wool\.sh" run/);
+  assert.match(globalThis.herdr.notes[0].body, /wool-trust\.sh" run/);
 });
 
 test("gate: an answer to another question is ignored; a newer question takes over", async () => {

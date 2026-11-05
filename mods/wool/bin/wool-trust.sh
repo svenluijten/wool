@@ -1,13 +1,14 @@
 #!/bin/sh
-# wool.sh: wool's trust gate for a repo's .herdr/wool.yml(.dist).
+# wool-trust.sh: wool's trust gate for a repo's .herdr/wool.yml(.dist).
 #
-#   wool.sh list               every trusted or declined file
-#   wool.sh forget <folder>    forget every decision for <folder>'s repo
-#   wool.sh run <folder>       set up <folder>'s worktree again (asks first if needed)
-#   wool.sh prompt <state dir> ask about a worktree's config (wool runs this)
+#   wool-trust.sh list               every trusted or declined file
+#   wool-trust.sh forget <folder>    forget every decision for <folder>'s repo
+#   wool-trust.sh run <folder>       set up <folder>'s worktree again (asks first if needed)
+#   wool-trust.sh prompt <state dir> ask about a worktree's config (wool runs this)
 #
-# wool itself runs `wool.sh check` and `wool.sh prompt`. There is deliberately no `trust`
-# subcommand: trusting a file takes an answer typed into wool's prompt.
+# wool itself runs `wool-trust.sh check` and `wool-trust.sh prompt`. There is
+# deliberately no `trust` subcommand: trusting a file takes an answer typed
+# into wool's prompt.
 #
 # The store is ${XDG_CONFIG_HOME:-$HOME/.config}/wool/trust.tsv, one line per
 # decision: <sha256> TAB <trusted|declined> TAB <repo> TAB <file> TAB <date>.
@@ -22,16 +23,16 @@ locked=
 
 usage() {
   cat >&2 <<'EOF'
-usage: wool.sh list
-       wool.sh forget <folder>
-       wool.sh run <folder>
-       wool.sh prompt <state dir>
+usage: wool-trust.sh list
+       wool-trust.sh forget <folder>
+       wool-trust.sh run <folder>
+       wool-trust.sh prompt <state dir>
 EOF
   exit 2
 }
 
 die() {
-  printf 'wool.sh %s\n' "$*" >&2
+  printf 'wool-trust.sh %s\n' "$*" >&2
   exit 1
 }
 
@@ -176,7 +177,7 @@ cmd_prompt() {
   [ $# -eq 1 ] || usage
   state=$1
   if [ ! -t 0 ]; then
-    echo "wool.sh prompt: needs a terminal" >&2
+    echo "wool-trust.sh prompt: needs a terminal" >&2
     exit 1
   fi
   # Closed, hung up, Ctrl-C'd or failed without an answer: finish() answers
@@ -227,7 +228,7 @@ cmd_prompt() {
     break
   done
 
-  # wool asked again (wool.sh run) while this prompt stayed open: this
+  # wool asked again (wool-trust.sh run) while this prompt stayed open: this
   # answer is about a question wool no longer waits for.
   if [ "$(cat "$state/trust-request" 2>/dev/null)" != "$request" ]; then
     printf '\nThis question is out of date (wool asked again in another tab). Nothing was saved.\n'
@@ -244,14 +245,14 @@ cmd_prompt() {
 
   if [ "$choice" = decline ]; then
     printf '\nDeclined. wool won'"'"'t ask about this file again.\n'
-    printf 'To undo:\n  sh "%s/wool.sh" forget "%s"\n  sh "%s/wool.sh" run "%s"\n' "$bin" "$repo" "$bin" "$worktree"
+    printf 'To undo:\n  sh "%s/wool-trust.sh" forget "%s"\n  sh "%s/wool-trust.sh" run "%s"\n' "$bin" "$repo" "$bin" "$worktree"
   else
     printf '\nwool is setting up %s.\n' "$worktree"
-    printf 'If nothing happens (wool restarted while this was open), run:\n  sh "%s/wool.sh" run "%s"\n' "$bin" "$worktree"
+    printf 'If nothing happens (wool restarted while this was open), run:\n  sh "%s/wool-trust.sh" run "%s"\n' "$bin" "$worktree"
   fi
 }
 
-# wool.sh run <folder>: asks the running wool to set up a worktree again.
+# wool-trust.sh run <folder>: asks the running wool to set up a worktree again.
 cmd_run() {
   [ $# -eq 1 ] || usage
   dirs=$(git -C "$1" rev-parse --path-format=absolute --git-dir --git-common-dir 2>/dev/null) || dirs=
@@ -268,7 +269,7 @@ cmd_run() {
   printf 'Asked wool to set up %s.\n' "$top"
 }
 
-# wool.sh _take (wool runs this): prints each pending request's folder and
+# wool-trust.sh _take (wool runs this): prints each pending request's folder and
 # removes it. A request is taken with mv, so two copies of wool never both
 # take one.
 cmd_take() {
