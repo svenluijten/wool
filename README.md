@@ -27,7 +27,8 @@ with an option for personal overrides.
 
    ```sh
    git clone https://github.com/svenluijten/wool ~/Code/wool
-   cp -R ~/Code/wool/mods/wool ~/.config/herdr-app/mods/wool
+   mkdir -p ~/.config/herdr-app/mods/wool
+   cp -R ~/Code/wool/mods/wool/. ~/.config/herdr-app/mods/wool
    herdr-app check ~/.config/herdr-app/mods/wool
    ```
 
