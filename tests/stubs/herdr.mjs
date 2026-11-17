@@ -12,7 +12,19 @@ export const machines = () => [{ name: null, layout: "ready" }];
 export const knownAgents = async () => [];
 export const appHome = () => h().appHome;
 export const home = () => "/nonexistent-home";
-export const watchFolder = () => new Promise(() => {});
+// A watch that never fires unless cancelled, like an idle folder's. Each one
+// is recorded in herdr.watches, so tests can check they're all cancelled.
+export function watchFolder(path) {
+  let resolve;
+  const watch = new Promise((r) => (resolve = r));
+  const record = { path, cancelled: false };
+  (h().watches ??= []).push(record);
+  watch.cancel = () => {
+    record.cancelled = true;
+    resolve([]);
+  };
+  return watch;
+}
 export const notify = (n) => h().notes.push(n);
 export function run(name, args) {
   h().commands.push({ name, args });

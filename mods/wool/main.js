@@ -287,8 +287,17 @@ export default class Wool extends View {
             }
           });
         }
-        // The timer covers a watch that never fires (or was rejected).
-        await Promise.race([watchFolder(dir).catch(() => cx.sleep(REQUEST_POLL_MS)), cx.sleep(REQUEST_POLL_MS)]);
+        // The timer covers a watch that never fires (or was rejected). Each
+        // pass starts a new watch, so the old one must be cancelled: one left
+        // pending every 5 s fills the window's shared script runtime (1,024
+        // tasks) in about 85 minutes, and then other mods can't start. Nothing
+        // is missed between watches: the next pass takes what's in the folder.
+        const watch = watchFolder(dir);
+        try {
+          await Promise.race([watch.catch(() => cx.sleep(REQUEST_POLL_MS)), cx.sleep(REQUEST_POLL_MS)]);
+        } finally {
+          watch.cancel?.();
+        }
       }
     } catch (e) {
       notify({ title: "wool: wool-trust.sh run won't work", body: String(e?.message ?? e), level: "error" });

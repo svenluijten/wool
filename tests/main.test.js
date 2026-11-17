@@ -159,3 +159,15 @@ test("watchSetup: a failed setup in a tab opens no extra tab", async () => {
   assert.deepEqual(globalThis.herdr.commands, []);
   assert.equal(globalThis.herdr.notes[0].level, "error");
 });
+
+test("watchRequests cancels each folder watch it stops waiting on", async () => {
+  const t = setup();
+  // Five quiet passes (the sleep wins each race), then the sixth sleep ends the loop.
+  let sleeps = 0;
+  const cx = { ...t.cx, sleep: async () => { if (++sleeps > 10) throw new Error("stop"); }, spawn: () => {} };
+  await t.wool.watchRequests(cx);
+  const watches = globalThis.herdr.watches ?? [];
+  assert.ok(watches.length >= 5, `only ${watches.length} watches`);
+  assert.deepEqual(watches.filter((w) => !w.cancelled), [], "every watch is cancelled");
+  assert.ok(watches.every((w) => w.path.endsWith("/wool/requests")));
+});
