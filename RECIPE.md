@@ -103,8 +103,8 @@ becomes the dev server. What runs and which tabs appear come from
   traps until a foreground child exits, so the runner runs setup in the
   background and `wait`s (keeping the tty on fd 3 for the steps' stdin).
 - Herdr's hot reload doesn't follow a symlinked mod folder.
-- Pane `title` and `size` are accepted and ignored (no such Herdr arguments);
-  a `prompt` only reaches an agent in a tab's first pane (`pane.split` has no
+- Panes have no `title` or `size` (no such Herdr arguments); a `prompt` only
+  reaches an agent in a tab's first pane (`pane.split` has no
   `task`).
 - Remote spaces are skipped. Built and checked on Herdr app 0.1.12, macOS.
 

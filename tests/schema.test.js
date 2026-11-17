@@ -39,11 +39,10 @@ tabs:
       - agent: default
   - title: Shell
     panes: 
-      - title: shell
+      - {}
   - title: Server
     panes: 
-      - title: server
-        command: composer run dev
+      - command: composer run dev
         setup: true
 `);
 
@@ -61,7 +60,7 @@ test("config: the quiz example validates", () => {
     { name: "Install JS dependencies", run: "npm ci", env: {} },
   ]);
   assert.deepEqual(c.tabs.map((t) => t.title), ["Agent", "Shell", "Server"]);
-  assert.equal(c.tabs[2].panes[0].title, "server");
+  assert.equal(c.tabs[2].panes[0].command, "composer run dev");
   assert.equal(c.tabs[2].panes[0].setup, true);
 });
 
@@ -118,15 +117,15 @@ test("workspace: the quiz example validates", () => {
   assert.deepEqual(w.tabs[0], {
     title: "Agent",
     panes: [{
-      title: null, kind: "agent", command: null, agent: "default", prompt: null, env: {},
-      split: null, size: null, setup: false, waitForSetup: false, focus: false,
+      kind: "agent", command: null, agent: "default", prompt: null, env: {},
+      split: null, setup: false, waitForSetup: false, focus: false,
     }],
   });
   assert.equal(w.tabs[1].panes[0].kind, "shell");
   assert.deepEqual(
     { ...w.tabs[2].panes[0] },
-    { title: "server", kind: "command", command: "composer run dev", agent: null, prompt: null, env: {},
-      split: null, size: null, setup: true, waitForSetup: true, focus: false },
+    { kind: "command", command: "composer run dev", agent: null, prompt: null, env: {},
+      split: null, setup: true, waitForSetup: true, focus: false },
   );
 });
 
@@ -144,11 +143,6 @@ test("workspace: env values become strings and layout env is kept", () => {
   const w = validateConfig(ws([{ panes: [{ command: "x", env: { PORT: 3000 } }] }], { env: { APP_ENV: "local" } }), FILE);
   assert.deepEqual(w.env, { APP_ENV: "local" });
   assert.deepEqual(w.tabs[0].panes[0].env, { PORT: "3000" });
-});
-
-test("workspace: size is kept as given", () => {
-  const w = validateConfig(ws([{ panes: [{}, { size: "30%" }, { size: 0.3 }, { size: 40 }] }]), FILE);
-  assert.deepEqual(w.tabs[0].panes.map((p) => p.size), [null, "30%", 0.3, 40]);
 });
 
 test("workspace: prompt, focus and background", () => {
@@ -182,7 +176,8 @@ test("workspace: rejects an unknown pane field", () => rejects(validateConfig, o
 test("workspace: rejects waitForSetup on a shell pane", () => rejects(validateConfig, one({ waitForSetup: true }), /waitForSetup/));
 test("workspace: rejects waitForSetup on an agent pane", () => rejects(validateConfig, one({ agent: "default", waitForSetup: true }), /waitForSetup/));
 test("workspace: rejects a non-boolean setup", () => rejects(validateConfig, one({ command: "x", setup: "yes" }), /setup.*true or false/));
-test("workspace: rejects a bad size", () => rejects(validateConfig, ws([{ panes: [{}, { size: "big" }] }]), /size/));
+test("workspace: rejects a pane title", () => rejects(validateConfig, one({ title: "x" }), /tabs\[0\]\.panes\[0\]: unknown field "title"/));
+test("workspace: rejects a pane size", () => rejects(validateConfig, ws([{ panes: [{}, { size: 40 }] }]), /tabs\[0\]\.panes\[1\]: unknown field "size"/));
 test("workspace: rejects version 2", () => rejects(validateConfig, { version: 2, tabs: [{ panes: [{}] }] }, /version/));
 test("workspace: rejects a background entry without command", () =>
   rejects(validateConfig, ws([{ panes: [{}] }], { background: [{ env: {} }] }), /background\[0\].*"command"/));

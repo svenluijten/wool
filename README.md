@@ -71,11 +71,10 @@ tabs:
       - agent: default
   - title: Shell
     panes:
-      - title: shell
+      - {}
   - title: Server
     panes:
-      - title: server
-        command: composer run dev
+      - command: composer run dev
         setup: true
 ```
 
@@ -115,7 +114,8 @@ First match wins:
 The layout uses the vocabulary of
 [razajamil/herdr-plugin-workspace-manager](https://github.com/razajamil/herdr-plugin-workspace-manager)
 (one of its `layouts[]` entries, without `id`: the repo decides which layout
-applies). Fields wool adds are marked *wool*.
+applies), minus its pane `title` and `size`: Herdr has no such arguments. Fields
+wool adds are marked *wool*.
 
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/svenluijten/wool/main/schema/wool.schema.json
@@ -164,7 +164,6 @@ background:
 | `panes[].setup` | `true` on at most one pane: it shows setup's output, then runs its own `command` once setup succeeded (with no command it stays a shell). Not on an agent pane. Without one, setup runs in an added "Setup" tab. |
 | `panes[].waitForSetup` | *wool.* The `command` waits for setup and doesn't run if setup fails. |
 | `panes[].focus` | *wool.* The pane with the keyboard when the space opens (one at most). Default: the first agent pane, else the first pane. |
-| `panes[].title`, `panes[].size` | Accepted for compatibility, **ignored**: Herdr panes have no settable title, and its split command takes no size. |
 | `background[]` | *wool.* Commands with no pane (needs `tabs`): `command`, optional `env` and `waitForSetup`. Output goes to `<worktree git dir>/wool/bg-<n>.log`, the pid to `bg-<n>.pid` (kill it to stop the command), the exit code to `bg-<n>.exit`. A nonzero exit posts a notification while wool keeps running; after a reload or an app restart wool stops watching, but the files stay. Background commands keep running after `git worktree remove`: stop them first. |
 
 A pane with neither `command` nor `agent` is a plain shell. Unknown fields,

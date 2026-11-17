@@ -20,7 +20,7 @@ tabs:
       - agent: default
   - title: Shell
     panes:
-      - title: shell
+      - {}
   - title: Dev
     panes:
       - command: composer run dev
@@ -65,7 +65,7 @@ test("split panes produce split steps from the previous pane", () => {
 tabs:
   - title: Work
     panes:
-      - title: shell
+      - {}
       - command: npm run watch
         split: horizontal
       - split: vertical
@@ -97,7 +97,7 @@ test("prompt becomes the tab's task", () => {
 });
 
 test("a prompt on a split agent pane can't be sent and warns", () => {
-  const ws = W("version: 1\ntabs:\n  - panes:\n      - title: s\n      - agent: default\n        prompt: hi\n");
+  const ws = W("version: 1\ntabs:\n  - panes:\n      - {}\n      - agent: default\n        prompt: hi\n");
   const { steps, warnings } = planLayout(ws, false, ctx);
   assert.deepEqual(steps[1].argv, keepShell(["claude"], "/bin/zsh"));
   assert.equal(warnings.length, 1);
@@ -168,17 +168,17 @@ test("agentArgv can be a function of the pane's agent name", () => {
 });
 
 test("focus: an explicit focus pane wins", () => {
-  const ws = W("version: 1\ntabs:\n  - panes:\n      - agent: default\n  - panes:\n      - title: s\n      - command: x\n        focus: true\n");
+  const ws = W("version: 1\ntabs:\n  - panes:\n      - agent: default\n  - panes:\n      - {}\n      - command: x\n        focus: true\n");
   assert.deepEqual(planLayout(ws, false, ctx).steps.at(-1), { op: "focus", ref: "t1p1" });
 });
 
 test("focus: the first pane when there is no agent", () => {
-  const ws = W("version: 1\ntabs:\n  - panes:\n      - title: s\n  - panes:\n      - command: x\n");
+  const ws = W("version: 1\ntabs:\n  - panes:\n      - {}\n  - panes:\n      - command: x\n");
   assert.deepEqual(planLayout(ws, false, ctx).steps.at(-1), { op: "focus", ref: "t0p0" });
 });
 
 test("focus: the first agent pane", () => {
-  const ws = W("version: 1\ntabs:\n  - panes:\n      - title: s\n  - panes:\n      - command: x\n      - agent: codex\n");
+  const ws = W("version: 1\ntabs:\n  - panes:\n      - {}\n  - panes:\n      - command: x\n      - agent: codex\n");
   assert.deepEqual(planLayout(ws, false, ctx).steps.at(-1), { op: "focus", ref: "t1p1" });
 });
 
@@ -188,7 +188,7 @@ env:
   A: "1"
 tabs:
   - panes:
-      - title: s
+      - {}
 background:
   - command: npm run watch
     waitForSetup: true

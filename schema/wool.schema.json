@@ -82,10 +82,6 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "title": {
-                  "type": "string",
-                  "description": "Accepted for razajamil compatibility; Herdr panes have no settable title, so wool ignores it."
-                },
                 "command": {
                   "type": "string",
                   "minLength": 1,
@@ -122,19 +118,6 @@
                     "horizontal"
                   ],
                   "description": "How this pane splits from the previous one (vertical = right, horizontal = down). Not on a tab's first pane. Default right."
-                },
-                "size": {
-                  "description": "Accepted for razajamil compatibility; Herdr's split commands take no size, so wool ignores it.",
-                  "oneOf": [
-                    {
-                      "type": "number",
-                      "exclusiveMinimum": 0
-                    },
-                    {
-                      "type": "string",
-                      "pattern": "^\\d+(\\.\\d+)?%$"
-                    }
-                  ]
                 },
                 "setup": {
                   "type": "boolean",

@@ -10,7 +10,7 @@ const has = (...paths) => {
 };
 const reader = (files) => async (p) => (p in files ? files[p] : null);
 
-const CONFIG = "version: 1\nsetup:\n  - run: echo hi\ntabs:\n  - panes:\n      - title: shell\n";
+const CONFIG = "version: 1\nsetup:\n  - run: echo hi\ntabs:\n  - panes:\n      - {}\n";
 
 test("personal yml in main wins over everything", () => {
   const exists = has(

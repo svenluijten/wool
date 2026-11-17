@@ -13,7 +13,7 @@ export class ConfigError extends Error {
 export const CONFIG_FIELDS = ["version", "env", "setup", "tabs", "background"];
 export const SETUP_STEP_FIELDS = ["name", "run", "env"];
 export const TAB_FIELDS = ["title", "panes"];
-export const PANE_FIELDS = ["title", "command", "agent", "prompt", "env", "split", "size", "setup", "waitForSetup", "focus"];
+export const PANE_FIELDS = ["command", "agent", "prompt", "env", "split", "setup", "waitForSetup", "focus"];
 export const BACKGROUND_FIELDS = ["command", "env", "waitForSetup"];
 
 const SPLITS = { right: "right", down: "down", vertical: "right", horizontal: "down" };
@@ -122,13 +122,6 @@ function validateLayout(c, value, env) {
         if (!split) c.fail(`${path}.split`, "expected right, down, vertical or horizontal");
       }
 
-      let size = null;
-      if (p.size !== undefined && p.size !== null) {
-        const ok = (typeof p.size === "number" && p.size > 0) || (typeof p.size === "string" && /^\d+(\.\d+)?%$/.test(p.size));
-        if (!ok) c.fail(`${path}.size`, 'expected cells (40), a fraction (0.3) or a percentage ("30%")');
-        size = p.size;
-      }
-
       const setup = c.bool(p.setup, `${path}.setup`);
       if (setup && kind === "agent") c.fail(path, '"setup: true" can\'t be on an agent pane');
       if (setup) {
@@ -143,14 +136,12 @@ function validateLayout(c, value, env) {
         focusAt = path;
       }
       return {
-        title: c.str(p.title, `${path}.title`),
         kind,
         command,
         agent,
         prompt,
         env: c.env(p.env, `${path}.env`),
         split,
-        size,
         setup,
         waitForSetup: wait || setup,
         focus,

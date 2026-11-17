@@ -15,9 +15,8 @@ tabs:
       - agent: default
   - title: Shell
     panes:
-      - title: shell
+      - {}
   - title: Server
     panes:
-      - title: server
-        command: composer run dev
+      - command: composer run dev
         setup: true
