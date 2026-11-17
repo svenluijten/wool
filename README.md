@@ -1,10 +1,10 @@
 # wool
 
-A mod for the [Herdr](https://herdr.dev) app that gets a new git worktree
-ready to work in. When a worktree space shows up, wool runs the repo's setup
-steps (copy `.env`, install dependencies, …) in a terminal you can watch, and
-lays out the space's tabs: your agent, a shell, a dev server that starts once
-setup has succeeded. Both are described by files committed to the repo, with
+A mod for the [Herdr](https://herdr.dev) app that allows you to hook into a worktree's "created" and "removed" events. 
+
+When a worktree space is created, `wool` runs the repo's setup steps (copy `.env`, install dependencies, …) 
+in a terminal you can watch, and lays out the space's tabs: your agent, a shell, a dev server that starts
+once setup has succeeded. Both are described by declarative files committed to the repo, with an option for
 personal overrides.
 
 ![wool](preview.png)
@@ -14,11 +14,11 @@ personal overrides.
 - Commands that need setup (a dev server) wait for it, and don't start if it
   fails. A failure stays on screen and posts a notification.
 - Spaces that arrive with something already in them (a briefed agent) are
-  never rearranged: wool only adds a "Setup" tab behind them.
+  never rearranged: `wool` only adds a "Setup" tab behind them.
 
 ## Installation
 
-wool runs programs and reads files outside its own folder: it runs `git`,
+`wool` runs programs and reads files outside its own folder: it runs `git`,
 `sh` and your repo's setup commands, and reads `.herdr/` files in your repos.
 See [Security and trust](#security-and-trust).
 
@@ -36,15 +36,15 @@ See [Security and trust](#security-and-trust).
    herdr-app do mod.open --name wool
    ```
 
-   wool runs as an invisible window (it draws nothing). Herdr keeps it and
+   `wool` runs as an invisible window (it draws nothing). Herdr keeps it and
    reopens it every time the app starts, so there is no layout to edit and the
    shipped `main` layout stays as it is.
 
 Good to know:
 
 - **Per layout.** Herdr keeps windows per layout. If you switch to another
-  layout (`ctrl-shift-l`), run `herdr-app do mod.open --name wool` there too.
-- **`mod.open` toggles.** Running it again closes wool. That's also how to
+  layout, run `herdr-app do mod.open --name wool` there too.
+- **`mod.open` toggles.** Running it again closes `wool`. That's also how to
   turn it off.
 - `herdr-app status` lists `"wool"` under `overlays` while it runs.
 
@@ -81,7 +81,7 @@ tabs:
 Commit it. Now **New worktree** (the space menu or the + menu) gives a space
 with three tabs: your agent (focused, ready to type into), a shell, and
 Server, which shows `composer install` and `npm ci` scrolling by and then
-becomes `composer run dev`. A notification says "wool: &lt;branch&gt; is ready".
+becomes `composer run dev`.
 
 ## Configuration
 
@@ -94,7 +94,7 @@ One file in the repo's `.herdr/` folder:
 - A plain `wool.yml` **replaces the `.dist` entirely**. Nothing is merged.
 - `setup` and `tabs` are both optional, but the file needs at least one:
   setup without tabs is fine (it runs in an added "Setup" tab), and so is the
-  reverse. With no file, wool does nothing for that repo.
+  reverse. With no file, `wool` does nothing for that repo.
 - Add `.herdr/*.yml` to your `.gitignore` so personal files stay personal.
 
 ### Where the file is read from
@@ -172,16 +172,16 @@ for editors; add the `# yaml-language-server: $schema=…` line shown above.
 
 ### YAML
 
-wool reads the YAML this file needs (maps, lists, strings, numbers,
+`wool` reads the YAML this file needs (maps, lists, strings, numbers,
 `true`/`false`, comments, `[]`, `{}`) and rejects the rest with a line number:
 tab indentation, `|`/`>` block scalars, anchors and aliases, flow lists with
 items, more than one document. Quote a value that contains `: ` or ` #`.
 
 ## Which spaces get what
 
-wool acts on a space only when its folder is a **linked** git worktree, made
-**in the last 3 minutes**, that wool hasn't handled before. Spaces that exist
-when wool starts or reloads are never handled, and neither is the main
+`wool` acts on a space only when its folder is a **linked** git worktree, made
+**in the last 3 minutes**, that `wool` hasn't handled before. Spaces that exist
+when `wool` starts or reloads are never handled, and neither is the main
 checkout or an old worktree you open again.
 
 | A new space for a fresh worktree… | Setup | Layout |
@@ -193,7 +193,7 @@ With no `tabs`, setup runs in an added "Setup" tab that doesn't take
 focus. Remote spaces (on another machine) are skipped in this version.
 
 A worktree you make with `git worktree add` in a terminal and then open with
-Open worktree within 3 minutes counts as new. That's on purpose.
+"Open worktree" within 3 minutes counts as new. That's on purpose.
 
 ## Environment variables
 
@@ -229,16 +229,16 @@ Every setup step gets:
   that worktree.
 - **No installed agent:** agent panes become plain shells, with a warning.
 
-wool keeps its per-worktree state in the worktree's private git dir
+`wool` keeps its per-worktree state in the worktree's private git dir
 (`<repo>/.git/worktrees/<name>/wool/`): the claim, `setup.sh`, `status`,
 background logs. It never shows in `git status` and goes away with
 `git worktree remove`. Setup runs once per worktree. To run it again (this
 also updates `status`, so waiting commands follow it), in any terminal:
 `sh ~/.config/herdr-app/mods/wool/bin/wool-run.sh <that folder>`.
-- **Something goes wrong after wool claimed the worktree** (before setup
+- **Something goes wrong after `wool` claimed the worktree** (before setup
   started): a notification says what, and gives that same command.
-- **You typed into the new space's shell before wool laid it out:** if
-  something is running there, wool keeps that tab and says so.
+- **You typed into the new space's shell before `wool` laid it out:** if
+  something is running there, `wool` keeps that tab and says so.
 
 ## Security and trust
 
@@ -248,25 +248,14 @@ give `composer` scripts or npm `postinstall`: only use wool with
 repos whose committed files you trust, and read `.herdr/` in a repo before
 making worktrees of it.
 
-wool itself runs programs (`git`, `sh`, the setup steps, the commands in
+`wool` itself runs programs (`git`, `sh`, the setup steps, the commands in
 `wool.yml`) and reads files outside its own folder (`.herdr/` files in
 your repos, its state in their git dirs). It doesn't use the network.
-
-## Relationship to herdr-dog and the workspace manager
-
-- [herdr-dog](https://github.com/nickspaargaren/herdr-dog) runs
-  `.herdr/worktrees.yml` setup steps for the Herdr **TUI**. wool does the
-  same job for the Herdr **app**, with its own file: the same step fields
-  (`name`, `run`, `env`), but under a top-level `setup:` instead of
-  `worktrees.setup`, next to the layout.
-- [razajamil/herdr-plugin-workspace-manager](https://github.com/razajamil/herdr-plugin-workspace-manager)
-  lays out TUI workspaces from a global config. wool borrows its layout
-  vocabulary and reads the layout from the repo.
 
 ## Development
 
 ```sh
-npm test                                    # logic tests, no Herdr needed (Node 22)
+npm test
 ln -s "$PWD/mods/wool" ~/.config/herdr-app/mods/wool
 herdr-app check ~/.config/herdr-app/mods/wool
 herdr-app do mod.open --name wool
@@ -275,12 +264,7 @@ herdr-app do mod.open --name wool
 All decisions live in `mods/wool/lib/` (YAML reading, validation, file lookup,
 space detection, layout planning, script generation) and are tested with
 `node --test`. `mods/wool/bin/` holds the POSIX `sh` scripts that run in
-terminals. `main.js` is the glue. `docs/notes/herdr-facts.md` records the
-Herdr behaviour wool relies on.
+terminals. `main.js` is the glue.
 
 Herdr's hot reload doesn't follow a symlinked mod folder: after editing
 through the link, run `herdr-app do mod.open --name wool` twice to restart it.
-
-## License
-
-[MIT](LICENSE)
