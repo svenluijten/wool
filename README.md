@@ -111,12 +111,6 @@ First match wins:
 
 ### Fields
 
-The layout uses the vocabulary of
-[razajamil/herdr-plugin-workspace-manager](https://github.com/razajamil/herdr-plugin-workspace-manager)
-(one of its `layouts[]` entries, without `id`: the repo decides which layout
-applies), minus its pane `title` and `size`: Herdr has no such arguments. Fields
-wool adds are marked *wool*.
-
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/svenluijten/wool/main/schema/wool.schema.json
 version: 1
@@ -133,6 +127,9 @@ tabs:
     panes:
       - agent: default
         prompt: Read CONTRIBUTING.md, then wait for my task.
+  - title: Shell
+    panes: 
+      - {}
   - title: Dev
     panes:
       - command: npm run dev
