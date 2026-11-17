@@ -157,7 +157,8 @@ test("wool-claim: a subfolder of a worktree claims the worktree", () => {
 test("parseClaim reads a claimed line and ignores the rest", async () => {
   const { parseClaim } = await import("../mods/wool/lib/detect.js");
   assert.deepEqual(parseClaim("claimed\t/m/.git/worktrees/b\t/m\tfeat/x\t/wt/b\n"), {
-    gitDir: "/m/.git/worktrees/b", stateDir: "/m/.git/worktrees/b/wool", main: "/m", branch: "feat/x", worktree: "/wt/b",
+    gitDir: "/m/.git/worktrees/b", stateDir: "/m/.git/worktrees/b/wool", recordDir: "/m/.git/wool/b",
+    main: "/m", branch: "feat/x", worktree: "/wt/b",
   });
   assert.equal(parseClaim("taken\n"), null);
   assert.equal(parseClaim("stale"), null);
@@ -223,4 +224,21 @@ test("wool-claim rerun: refuses while setup is running", () => {
 test("wool-claim rerun: the main checkout is still not-linked", () => {
   const { main } = repo();
   assert.equal(rerun(main), "not-linked");
+});
+
+test("closedSpaces: tracked spaces that are no longer listed", async () => {
+  const { closedSpaces } = await import("../mods/wool/lib/detect.js");
+  const tracked = new Map([["s1", {}], ["s2", {}], ["s3", {}]]);
+  assert.deepEqual(closedSpaces(tracked, [{ id: "s2" }, { id: "s9" }]), ["s1", "s3"]);
+  assert.deepEqual(closedSpaces(new Map(), [{ id: "s1" }]), []);
+});
+
+test("parseRecords reads wool-records.sh's lines", async () => {
+  const { parseRecords } = await import("../mods/wool/lib/detect.js");
+  assert.deepEqual(parseRecords("/m/.git/wool/a\t/wt/a b\n/m/.git/wool/b\t/wt/b\n"), [
+    { record: "/m/.git/wool/a", worktree: "/wt/a b" },
+    { record: "/m/.git/wool/b", worktree: "/wt/b" },
+  ]);
+  assert.deepEqual(parseRecords(""), []);
+  assert.deepEqual(parseRecords("junk\n"), []);
 });

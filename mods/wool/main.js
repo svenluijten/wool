@@ -6,6 +6,8 @@
 // in a terminal, and lays out plain-shell spaces, both from .herdr/wool.yml(.dist).
 // A config someone else could have written runs only once the person has
 // trusted its exact contents (bin/wool-trust.sh, asked in a `wool` tab).
+// When a space it set up closes and its worktree folder then disappears, it
+// runs the repo's teardown steps in the background (bin/wool-teardown.sh).
 // All decisions live in lib/ (tested with node --test); this file is glue.
 
 import { View, div } from "gpui-kit";
@@ -13,8 +15,10 @@ import {
   spaces, panes, terminals, focused, machines, run, exec, notify, knownAgents, readTextFile, appHome, home, watchFolder,
 } from "herdr";
 import { loadConfig } from "./lib/config.js";
-import { classifySpace, newSpaces, parseClaim, originalIsIdle, FRESH_MINUTES, PENDING_LIMIT_MS } from "./lib/detect.js";
-import { setupScript } from "./lib/shell.js";
+import {
+  classifySpace, newSpaces, parseClaim, originalIsIdle, closedSpaces, parseRecords, FRESH_MINUTES, PENDING_LIMIT_MS,
+} from "./lib/detect.js";
+import { setupScript, teardownScript } from "./lib/shell.js";
 import { planLayout, planSetupOnly, pickAgent } from "./lib/plan.js";
 import { parseCheck, readAnswer, requestNonce, promptTab, spaceForFolder } from "./lib/trust.js";
 
@@ -24,6 +28,10 @@ const BG_POLL_MS = 5000;
 const ANSWER_POLL_MS = 500;
 const GONE_GRACE_MS = 2000;
 const REQUEST_POLL_MS = 5000;
+// Herdr's worktree mod closes the space first, then gives `git worktree remove` up to 10 minutes.
+const REMOVAL_WAIT_MS = 10 * 60000;
+const TEARDOWN_POLL_MS = 2000;
+const TEARDOWN_WATCH_MS = 30 * 60000;
 
 const tilde = (p) => (p && p.startsWith(home()) ? "~" + p.slice(home().length) : p);
 const base = (p) => String(p).split("/").pop();
@@ -46,6 +54,7 @@ export default class Wool extends View {
   init(_props, _cx) {
     this.known = null; // space ids wool has decided about (seeded on the first ready render)
     this.firstSeen = new Map(); // space id -> ms when first seen, while pending
+    this.records = new Map(); // space id -> { record, worktree } for spaces with a teardown
     this.binDir = `${appHome()}/mods/wool/bin`;
     this.asking = new Map(); // worktree -> wool tab's pane, while its prompt is open
   }
@@ -66,7 +75,13 @@ export default class Wool extends View {
       if (!localReady()) return;
       this.known = new Set(all.map((s) => s.id));
       cx.spawn((cx) => this.watchRequests(cx));
+      cx.spawn((cx) => this.sweep(cx, all).catch((e) => console.log(`wool: sweep: ${e?.stack ?? e}`)));
       return;
+    }
+    for (const id of closedSpaces(this.records, all)) {
+      const r = this.records.get(id);
+      this.records.delete(id);
+      cx.spawn((cx) => this.watchRemoval(cx, r).catch((e) => console.log(`wool: teardown: ${e?.stack ?? e}`)));
     }
     const fresh = newSpaces(this.known, all);
     if (fresh.length === 0) return;
@@ -141,8 +156,11 @@ export default class Wool extends View {
     // An empty setup list is nothing to run: no Setup tab, nothing waits.
     const hasSetup = cfg.steps.length > 0;
     const layout = kind === "plain-shell" && cfg.tabs !== null;
-    if (!hasSetup && !layout) return;
+    const hasTeardown = cfg.teardown.length > 0 && Boolean(wt.recordDir);
+    if (!hasSetup && !layout && !hasTeardown) return;
     if (!(await this.gate(cx, space, kind, wt, config))) return;
+    if (hasTeardown) await this.writeRecord(space, wt, cfg.teardown);
+    if (!hasSetup && !layout) return;
 
     if (hasSetup) {
       const script = setupScript(cfg.steps, {
@@ -172,6 +190,83 @@ export default class Wool extends View {
     if (hasSetup) await this.watchSetup(cx, wt);
     const bg = plan.steps.filter((s) => s.op === "background").length;
     if (bg > 0) await this.watchBackground(cx, wt, bg);
+  }
+
+  // Written now because the worktree's files (and its .herdr/wool.yml.dist)
+  // are gone by the time teardown runs.
+  async writeRecord(space, wt, steps) {
+    const script = teardownScript(steps, {
+      HERDR_WORKTREE: wt.worktree, HERDR_MAIN_WORKTREE: wt.main, HERDR_BRANCH: wt.branch,
+    });
+    const w = await exec("sh", [
+      "-c",
+      'mkdir -p "$1" && rm -f "$1/status" "$1/teardown.log" && printf %s "$2" > "$1/teardown.sh" && printf "%s\\n" "$3" > "$1/worktree"',
+      "sh", wt.recordDir, script, wt.worktree,
+    ]);
+    if (w.code !== 0) {
+      notify({ title: "wool: teardown won't run", body: `Couldn't write ${tilde(wt.recordDir)}: ${w.stderr.trim()}`, level: "error" });
+      return;
+    }
+    this.records.set(space.id, { record: wt.recordDir, worktree: wt.worktree });
+  }
+
+  // On start: tear down records whose worktree went while wool wasn't
+  // watching, and watch the open spaces that still have one.
+  async sweep(cx, all) {
+    const local = all.filter((s) => (s.machine === null || s.machine === undefined) && s.folder);
+    const seen = new Set();
+    for (const space of local) {
+      const r = await exec("sh", [`${this.binDir}/wool-records.sh`, space.folder]);
+      for (const rec of parseRecords(r.stdout)) {
+        const open = local.find((s) => s.folder === rec.worktree);
+        if (open && spaces().some((s) => s.id === open.id)) this.records.set(open.id, rec);
+        if (seen.has(rec.record)) continue;
+        seen.add(rec.record);
+        if ((await this.checkRecord(rec)) === "gone") await this.runTeardown(cx, rec);
+      }
+    }
+  }
+
+  async checkRecord(rec) {
+    const r = await exec("sh", [`${this.binDir}/wool-teardown.sh`, "--check", rec.record]);
+    return r.code === 0 ? r.stdout.trim().split("\n").pop() : "error";
+  }
+
+  // A closed space is only a removed worktree if its folder then disappears.
+  async watchRemoval(cx, rec) {
+    for (let waited = 0; waited <= REMOVAL_WAIT_MS; waited += TEARDOWN_POLL_MS) {
+      const state = await this.checkRecord(rec);
+      if (state === "gone") return this.runTeardown(cx, rec);
+      if (state !== "alive") return;
+      await cx.sleep(TEARDOWN_POLL_MS);
+    }
+  }
+
+  // Runs in the background (exec has a 30 s limit); the record folder
+  // disappearing means it succeeded.
+  async runTeardown(cx, rec) {
+    const name = rec.record.split("/").pop();
+    const r = await exec("sh", ["-c", 'nohup sh "$1" "$2" >/dev/null 2>&1 &', "sh", `${this.binDir}/wool-teardown.sh`, rec.record]);
+    if (r.code !== 0) {
+      notify({ title: `wool: teardown of ${name} didn't start`, body: r.stderr.trim(), level: "error" });
+      return;
+    }
+    for (let waited = 0; waited <= TEARDOWN_WATCH_MS; waited += TEARDOWN_POLL_MS) {
+      await cx.sleep(TEARDOWN_POLL_MS);
+      if ((await readTextFile(`${rec.record}/worktree`)) === null) {
+        notify({ title: `wool: tore down ${name}`, level: "success" });
+        return;
+      }
+      const status = ((await readTextFile(`${rec.record}/status`)) ?? "").split("\n")[0].trim();
+      if (status.startsWith("failed")) {
+        notify({
+          title: `wool: teardown of ${name} failed`,
+          body: `Step '${status.replace(/^failed\s*/, "")}' failed. Log: ${tilde(`${rec.record}/teardown.log`)}\nTo run it again: sh "${this.binDir}/wool-teardown.sh" "${rec.record}"`,
+          level: "error",
+        });
+        return;
+      }
+    }
   }
 
   // `wool-trust.sh run <folder>` drops a request file; this takes them as they come

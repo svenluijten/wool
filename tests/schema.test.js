@@ -75,7 +75,7 @@ test("config: tabs only has no steps", () => {
   assert.deepEqual(validateConfig(one({}), FILE).steps, []);
 });
 
-test("config: rejects a file with neither setup nor tabs", () => rejects(validateConfig, { version: 1 }, /"setup".*"tabs"/));
+test("config: rejects a file with neither setup, tabs nor teardown", () => rejects(validateConfig, { version: 1 }, /"setup".*"tabs".*"teardown"/));
 test("config: rejects background without tabs", () =>
   rejects(validateConfig, steps([{ run: "x" }], { background: [{ command: "y" }] }), /background.*tabs/));
 test("config: rejects the old worktrees block", () =>
@@ -106,6 +106,30 @@ test("setup: rejects an empty run", () => rejects(validateConfig, steps([{ run: 
 test("setup: rejects an unknown step field", () => rejects(validateConfig, steps([{ run: "x", cwd: "y" }]), /unknown field "cwd"/));
 test("setup: rejects an unknown top-level field", () => rejects(validateConfig, steps([], { hooks: {} }), /unknown field "hooks"/));
 test("setup: rejects a list in env", () => rejects(validateConfig, steps([{ run: "x", env: { A: [1] } }]), /env\.A/));
+
+// ---- teardown ------------------------------------------------------------
+
+test("teardown: steps validate like setup steps, with the top-level env", () => {
+  const v = validateConfig(steps([], { env: { A: "top" }, teardown: [{ name: "Drop db", run: "dropdb x", env: { B: "b" } }] }), FILE);
+  assert.deepEqual(v.teardown, [{ name: "Drop db", run: "dropdb x", env: { A: "top", B: "b" } }]);
+});
+
+test("teardown: missing means none", () => {
+  assert.deepEqual(validateConfig(steps([]), FILE).teardown, []);
+  assert.deepEqual(validateConfig(one({}), FILE).teardown, []);
+});
+
+test("teardown: a file with only teardown is valid", () => {
+  const v = validateConfig({ version: 1, teardown: [{ run: "x" }] }, FILE);
+  assert.deepEqual(v.steps, []);
+  assert.equal(v.tabs, null);
+  assert.equal(v.teardown.length, 1);
+});
+
+test("teardown: rejects a step without run", () => rejects(validateConfig, steps([], { teardown: [{ name: "x" }] }), /teardown\[0\].*"run"/));
+test("teardown: rejects a teardown that isn't a list", () => rejects(validateConfig, steps([], { teardown: { run: "x" } }), /teardown.*list/));
+test("teardown: rejects an unknown step field", () =>
+  rejects(validateConfig, steps([], { teardown: [{ run: "x", cwd: "y" }] }), /teardown\[0\]: unknown field "cwd"/));
 
 // ---- workspace -----------------------------------------------------------
 
@@ -194,6 +218,7 @@ test("json schemas list the same fields as the validators", () => {
   const w = load("wool.schema.json");
   assert.deepEqual(keys(w), sorted(CONFIG_FIELDS));
   assert.deepEqual(keys(w.properties.setup.items), sorted(SETUP_STEP_FIELDS));
+  assert.deepEqual(keys(w.properties.teardown.items), sorted(SETUP_STEP_FIELDS));
   assert.deepEqual(keys(w.properties.tabs.items), sorted(TAB_FIELDS));
   assert.deepEqual(keys(w.properties.tabs.items.properties.panes.items), sorted(PANE_FIELDS));
   assert.deepEqual(keys(w.properties.background.items), sorted(BACKGROUND_FIELDS));

@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { shellQuote, setupScript, runArgv, waitArgv, bgArgv, withEnv } from "../mods/wool/lib/shell.js";
+import { shellQuote, setupScript, teardownScript, runArgv, waitArgv, bgArgv, withEnv } from "../mods/wool/lib/shell.js";
 
 const BIN = join(dirname(fileURLToPath(import.meta.url)), "..", "mods", "wool", "bin");
 const tmp = (name = "wool test ") => mkdtempSync(join(tmpdir(), name));
@@ -56,6 +56,21 @@ test("setup script runs steps in order in the worktree with env vars", () => {
   assert.equal(readFileSync(join(worktree, "order.txt"), "utf8"), "feat/it's-$x");
   assert.match(r.stdout, /==> branch/);
   assert.match(r.stdout, /==> pwd -P > pwd.txt/);
+});
+
+test("teardown script runs its steps in the main checkout, with the gone worktree's env", () => {
+  const main = tmp("main it's $x ");
+  const script = teardownScript(
+    [{ name: "where", run: 'pwd -P > where.txt; printf %s "$HERDR_WORKTREE|$HERDR_BRANCH|$DB" > env.txt', env: { DB: "app_x" } }],
+    { HERDR_WORKTREE: "/gone/wt", HERDR_MAIN_WORKTREE: main, HERDR_BRANCH: "feat/x" },
+  );
+  const file = join(tmp(), "teardown.sh");
+  writeFileSync(file, script);
+  const r = run(["sh", file]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(readFileSync(join(main, "where.txt"), "utf8").trim(), execFileSync("sh", ["-c", 'cd "$1" && pwd -P', "sh", main], { encoding: "utf8" }).trim());
+  assert.equal(readFileSync(join(main, "env.txt"), "utf8"), "/gone/wt|feat/x|app_x");
+  assert.match(r.stdout, /==> where/);
 });
 
 test("a step's env doesn't leak into the next step", () => {
@@ -208,8 +223,102 @@ test("withEnv argv sets the variables for the command", () => {
   assert.equal(r.stdout, "it's $x");
 });
 
+// A fake common git dir with one record, as wool writes it at setup.
+function record(steps, { worktree = join(tmp(), "gone wt"), name = "feat-x" } = {}) {
+  const common = join(tmp("repo it's "), ".git");
+  mkdirSync(common);
+  writeFileSync(join(common, "HEAD"), "ref: refs/heads/main\n");
+  const main = dirname(common);
+  const rec = join(common, "wool", name);
+  mkdirSync(rec, { recursive: true });
+  writeFileSync(join(rec, "worktree"), worktree + "\n");
+  writeFileSync(join(rec, "teardown.sh"), teardownScript(steps, { HERDR_WORKTREE: worktree, HERDR_MAIN_WORKTREE: main, HERDR_BRANCH: "feat/x" }));
+  return { rec, main, common, worktree };
+}
+const teardown = (...args) => run(["sh", join(BIN, "wool-teardown.sh"), ...args]);
+
+test("wool-teardown runs teardown once the worktree is gone, then deletes the record", () => {
+  const { rec, main, common } = record([{ name: "drop", run: "touch dropped", env: {} }]);
+  const r = teardown(rec);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /^ok$/m);
+  assert.ok(existsSync(join(main, "dropped")));
+  assert.ok(!existsSync(rec));
+  assert.ok(!existsSync(join(common, "wool")), "the empty wool folder stays behind");
+});
+
+test("wool-teardown keeps the wool folder while other records are in it", () => {
+  const { rec, common } = record([]);
+  mkdirSync(join(common, "wool", "other"));
+  assert.equal(teardown(rec).status, 0);
+  assert.ok(!existsSync(rec));
+  assert.ok(existsSync(join(common, "wool", "other")));
+});
+
+test("wool-teardown does nothing while the worktree still exists", () => {
+  const { rec, main } = record([{ name: "drop", run: "touch dropped", env: {} }], { worktree: tmp() });
+  const r = teardown(rec);
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /^alive$/m);
+  assert.ok(!existsSync(join(main, "dropped")));
+  assert.ok(existsSync(rec));
+});
+
+test("wool-teardown keeps the record, its log and the failed step when a step fails", () => {
+  const { rec, main } = record([
+    { name: "one", run: "echo hello from one", env: {} },
+    { name: "two", run: "exit 3", env: {} },
+    { name: "three", run: "touch three", env: {} },
+  ]);
+  const r = teardown(rec);
+  assert.equal(r.status, 3);
+  assert.match(r.stdout, /^failed two$/m);
+  assert.equal(readFileSync(join(rec, "status"), "utf8").trim(), "failed two");
+  assert.match(readFileSync(join(rec, "teardown.log"), "utf8"), /hello from one/);
+  assert.ok(!existsSync(join(main, "three")));
+  assert.ok(!existsSync(join(rec, "running")), "a failed run must not block a retry");
+});
+
+test("wool-teardown --check reports gone, alive, failed and busy without running anything", () => {
+  const { rec, main } = record([{ name: "drop", run: "touch dropped", env: {} }]);
+  assert.match(teardown("--check", rec).stdout, /^gone$/m);
+  writeFileSync(join(rec, "status"), "failed drop\n");
+  assert.match(teardown("--check", rec).stdout, /^failed$/m);
+  mkdirSync(join(rec, "running"));
+  assert.match(teardown("--check", rec).stdout, /^busy$/m);
+  assert.match(teardown(rec).stdout, /^busy$/m);
+  assert.ok(!existsSync(join(main, "dropped")));
+  const alive = record([], { worktree: tmp() });
+  assert.match(teardown("--check", alive.rec).stdout, /^alive$/m);
+});
+
+test("wool-teardown refuses a folder that isn't a record in a git dir", () => {
+  const { rec } = record([]);
+  const notWool = join(tmp(), "x");
+  mkdirSync(notWool);
+  writeFileSync(join(notWool, "worktree"), "/gone\n");
+  writeFileSync(join(notWool, "teardown.sh"), "exit 0\n");
+  for (const bad of [notWool, dirname(rec), join(rec, "..", "..", "wool", "missing")]) {
+    const r = teardown(bad);
+    assert.equal(r.status, 2, `${bad}: ${r.stdout}`);
+    assert.ok(existsSync(bad) || bad.endsWith("missing"));
+  }
+  assert.ok(existsSync(notWool));
+});
+
+test("wool-records lists a repo's records from any of its checkouts", () => {
+  const { rec, main, worktree } = record([]);
+  const empty = join(dirname(rec), "no-worktree-file");
+  mkdirSync(empty);
+  execFileSync("git", ["init", "-q", main]);
+  const r = run(["sh", join(BIN, "wool-records.sh"), main]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, `${realpathSync(rec)}\t${worktree}\n`);
+  assert.equal(run(["sh", join(BIN, "wool-records.sh"), tmp()]).stdout, "");
+});
+
 test("scripts are valid POSIX sh", () => {
-  for (const f of ["wool-run.sh", "wool-wait.sh", "wool-bg.sh", "wool-claim.sh", "wool-trust.sh"]) {
+  for (const f of ["wool-run.sh", "wool-wait.sh", "wool-bg.sh", "wool-claim.sh", "wool-trust.sh", "wool-teardown.sh", "wool-records.sh"]) {
     const r = run(["sh", "-n", join(BIN, f)]);
     assert.equal(r.status, 0, `${f}: ${r.stderr}`);
   }

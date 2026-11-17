@@ -10,7 +10,7 @@ export class ConfigError extends Error {
   }
 }
 
-export const CONFIG_FIELDS = ["version", "env", "setup", "tabs", "background"];
+export const CONFIG_FIELDS = ["version", "env", "setup", "tabs", "background", "teardown"];
 export const SETUP_STEP_FIELDS = ["name", "run", "env"];
 export const TAB_FIELDS = ["title", "panes"];
 export const PANE_FIELDS = ["command", "agent", "prompt", "env", "split", "setup", "waitForSetup", "focus"];
@@ -62,11 +62,11 @@ function checker(file) {
   return { fail, map, join, str, bool, env, version };
 }
 
-function validateSteps(c, list, topEnv) {
+function validateSteps(c, list, topEnv, key) {
   if (list === undefined || list === null) return [];
-  if (!Array.isArray(list)) c.fail("setup", "expected a list of steps");
+  if (!Array.isArray(list)) c.fail(key, "expected a list of steps");
   return list.map((s, i) => {
-    const path = `setup[${i}]`;
+    const path = `${key}[${i}]`;
     c.map(s, path, SETUP_STEP_FIELDS);
     if (s.run === undefined || s.run === null) c.fail(path, '"run" is required');
     return {
@@ -77,21 +77,22 @@ function validateSteps(c, list, topEnv) {
   });
 }
 
-// Returns { env, steps, tabs, background }. tabs is null when the file has no
-// layout (setup only); steps is [] when it has no setup.
+// Returns { env, steps, tabs, background, teardown }. tabs is null when the
+// file has no layout; steps and teardown are [] when it has none.
 export function validateConfig(value, file) {
   const c = checker(file);
   c.map(value, "", CONFIG_FIELDS);
   c.version(value);
   const none = (v) => v === undefined || v === null;
-  if (none(value.setup) && none(value.tabs)) c.fail("", 'needs "setup", "tabs" or both');
+  if (none(value.setup) && none(value.tabs) && none(value.teardown)) c.fail("", 'needs "setup", "tabs", "teardown" or a mix');
   const env = c.env(value.env, "env");
-  const steps = validateSteps(c, value.setup, env);
+  const steps = validateSteps(c, value.setup, env, "setup");
+  const teardown = validateSteps(c, value.teardown, env, "teardown");
   if (none(value.tabs)) {
     if (!none(value.background)) c.fail("background", 'needs "tabs" (background commands are part of the layout)');
-    return { env, steps, tabs: null, background: [] };
+    return { env, steps, tabs: null, background: [], teardown };
   }
-  return { ...validateLayout(c, value, env), steps };
+  return { ...validateLayout(c, value, env), steps, teardown };
 }
 
 function validateLayout(c, value, env) {

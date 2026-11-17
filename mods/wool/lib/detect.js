@@ -35,11 +35,17 @@ export function newSpaces(known, spaces) {
 }
 
 // Reads wool-claim.sh's output; null unless this copy of wool claimed it.
+// recordDir sits in the common git dir because `git worktree remove` deletes
+// the worktree's own git dir, and teardown runs after that.
 export function parseClaim(stdout) {
   const line = String(stdout).replace(/\r?\n$/, "");
   const [word, gitDir, main, branch, worktree] = line.split("\t");
   if (word !== "claimed" || !gitDir || !main || !worktree) return null;
-  return { gitDir, stateDir: `${gitDir}/wool`, main, branch: branch ?? "", worktree };
+  const recordDir = gitDir.replace(/\/worktrees\/([^/]+)$/, "/wool/$1");
+  return {
+    gitDir, stateDir: `${gitDir}/wool`, recordDir: recordDir === gitDir ? null : recordDir,
+    main, branch: branch ?? "", worktree,
+  };
 }
 
 // Before closing the space's original shell tab: is that shell still idle?
@@ -54,4 +60,18 @@ export function originalIsIdle(pane, terminal) {
   if (!now) return true;
   const base = (p) => String(p).split("/").pop().replace(/^-/, "");
   return isPlainShellArgv(now) && base(now[0]) === base(terminal.argv[0]);
+}
+
+// Ids in `tracked` (a Map keyed by space id) whose space has closed.
+export function closedSpaces(tracked, spaces) {
+  const open = new Set(spaces.map((s) => s.id));
+  return [...tracked.keys()].filter((id) => !open.has(id));
+}
+
+export function parseRecords(stdout) {
+  return String(stdout)
+    .split("\n")
+    .map((line) => line.split("\t"))
+    .filter(([record, worktree]) => record && worktree)
+    .map(([record, worktree]) => ({ record, worktree }));
 }

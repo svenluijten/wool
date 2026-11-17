@@ -229,6 +229,43 @@
           }
         }
       }
+    },
+    "teardown": {
+      "type": "array",
+      "description": "Teardown steps, run in order in the main checkout after the worktree is removed (its folder is gone by then); the first failure stops teardown.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "run"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Label shown while it runs."
+          },
+          "run": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Run as /bin/sh -c <run> in the main checkout."
+          },
+          "env": {
+            "type": "object",
+            "description": "Environment variables (NAME: value), over the top-level env.",
+            "propertyNames": {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          }
+        }
+      }
     }
   },
   "anyOf": [

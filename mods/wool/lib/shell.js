@@ -8,6 +8,14 @@ export function shellQuote(s) {
 const label = (step) => step.name ?? step.run;
 
 export function setupScript(steps, env) {
+  return stepsScript(steps, env, "HERDR_WORKTREE");
+}
+
+export function teardownScript(steps, env) {
+  return stepsScript(steps, env, "HERDR_MAIN_WORKTREE");
+}
+
+function stepsScript(steps, env, dirVar) {
   const q = shellQuote;
   const lines = [
     "#!/bin/sh",
@@ -17,7 +25,7 @@ export function setupScript(steps, env) {
     `HERDR_MAIN_WORKTREE=${q(env.HERDR_MAIN_WORKTREE)}`,
     `HERDR_BRANCH=${q(env.HERDR_BRANCH)}`,
     "export HERDR_WORKTREE HERDR_MAIN_WORKTREE HERDR_BRANCH",
-    'cd "$HERDR_WORKTREE" || { echo "wool: can\'t enter $HERDR_WORKTREE"; exit 1; }',
+    `cd "$${dirVar}" || { echo "wool: can't enter $${dirVar}"; exit 1; }`,
     "wool_step() {",
     "  wool_label=$1; shift",
     "  printf '\\n==> %s\\n' \"$wool_label\"",

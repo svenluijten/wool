@@ -94,9 +94,9 @@ One file in the repo's `.herdr/` folder:
 | `.herdr/wool.yml.dist` | `.herdr/wool.yml` |
 
 - A plain `wool.yml` **replaces the `.dist` entirely**. Nothing is merged.
-- `setup` and `tabs` are both optional, but the file needs at least one:
-  setup without tabs is fine (it runs in an added "Setup" tab), and so is the
-  reverse. With no file, `wool` does nothing for that repo.
+- `setup`, `tabs` and `teardown` are all optional, but the file needs at
+  least one: setup without tabs is fine (it runs in an added "Setup" tab),
+  and so is the reverse. With no file, `wool` does nothing for that repo.
 - Add `.herdr/*.yml` to your `.gitignore` so personal files stay personal.
 
 ### Where the file is read from
@@ -163,6 +163,7 @@ background:
 | `panes[].setup` | `true` on at most one pane: it shows setup's output, then runs its own `command` once setup succeeded (with no command it stays a shell). Not on an agent pane. Without one, setup runs in an added "Setup" tab. |
 | `panes[].waitForSetup` | *wool.* The `command` waits for setup and doesn't run if setup fails. |
 | `panes[].focus` | *wool.* The pane with the keyboard when the space opens (one at most). Default: the first agent pane, else the first pane. |
+| `teardown[]` | *wool.* Steps run after the worktree is removed, same fields as `setup[]`. See [Teardown](#teardown). |
 | `background[]` | *wool.* Commands with no pane (needs `tabs`): `command`, optional `env` and `waitForSetup`. Output goes to `<worktree git dir>/wool/bg-<n>.log`, the pid to `bg-<n>.pid` (kill it to stop the command), the exit code to `bg-<n>.exit`. A nonzero exit posts a notification while wool keeps running; after a reload or an app restart wool stops watching, but the files stay. Background commands keep running after `git worktree remove`: stop them first. |
 
 A pane with neither `command` nor `agent` is a plain shell. Unknown fields,
@@ -217,9 +218,9 @@ checksum and its full contents, and asks:
   without asking.
 
 Until you answer, nothing from the file runs: no setup, no layout, no agent,
-no background command. The space's own tab stays usable. In a plain-shell
-space the `wool` tab has the keyboard; in any other space (a briefed agent) it
-doesn't, and a warning notification ("wool: trust needed for <repo>") takes
+no background command, no teardown. The space's own tab stays usable. In a
+plain-shell space the `wool` tab has the keyboard; in any other space (a
+briefed agent) it doesn't, and a warning notification ("wool: trust needed for <repo>") takes
 you there. Closing the tab or pressing Ctrl-C counts as no answer: nothing is
 saved and nothing runs.
 
@@ -262,14 +263,47 @@ running as you (a malicious `postinstall`, an agent) can edit that file or
 type into the prompt's terminal. The gate makes sure you see a repo's
 commands before they first run; it is not a sandbox.
 
+## Teardown
+
+`teardown` runs when a worktree wool set up is removed, for example to drop
+the test database setup made:
+
+```yaml
+setup:
+  - name: Create test database
+    run: createdb "app_$(printf %s "$HERDR_BRANCH" | tr -c 'a-zA-Z0-9' _)"
+teardown:
+  - name: Drop test database
+    run: dropdb --if-exists "app_$(printf %s "$HERDR_BRANCH" | tr -c 'a-zA-Z0-9' _)"
+```
+
+- **When.** A space wool set up closes, and within 10 minutes its folder is
+  gone (Remove worktree closes the space first, then deletes the folder).
+  A space you only close keeps its worktree, so nothing runs. When wool
+  starts, it also tears down worktrees that were removed while it wasn't
+  running (Herdr closed, or `git worktree remove` in a terminal), for every
+  repo that has a space open.
+- **Where.** In the main checkout, in the background. The worktree's files
+  are gone by then, so teardown can't read its `.env`: work out names from
+  `HERDR_BRANCH` the same way in setup and teardown.
+- **Which steps.** The `teardown` from the file that was in force when setup
+  ran, saved at that time. Editing the file later doesn't change the teardown
+  of worktrees that already exist.
+- **Afterwards.** A notification says whether it worked. wool saves the
+  steps in `<repo>/.git/wool/<worktree name>/` (it outlives
+  `git worktree remove`) and deletes that folder once teardown succeeds, and
+  `<repo>/.git/wool/` too when it's empty. A failed teardown keeps the folder
+  with `teardown.log`; the notification gives the command to run it again,
+  and wool doesn't retry it by itself.
+
 ## Environment variables
 
-Every setup step gets:
+Every setup and teardown step gets:
 
 | Variable | Value |
 |---|---|
-| `HERDR_WORKTREE` | The new checkout (steps also run there). |
-| `HERDR_MAIN_WORKTREE` | The repo's main checkout. |
+| `HERDR_WORKTREE` | The new checkout (setup steps also run there; for teardown it no longer exists). |
+| `HERDR_MAIN_WORKTREE` | The repo's main checkout (teardown steps run there). |
 | `HERDR_BRANCH` | The new checkout's branch (empty when detached). |
 
 ## Examples
@@ -295,6 +329,7 @@ Every setup step gets:
   problem (with the line for YAML errors), and wool does nothing else for
   that worktree.
 - **No installed agent:** agent panes become plain shells, with a warning.
+- **A teardown step fails:** see [Teardown](#teardown).
 
 `wool` keeps its per-worktree state in the worktree's private git dir
 (`<repo>/.git/worktrees/<name>/wool/`): the claim, `setup.sh`, `status`,
@@ -316,12 +351,15 @@ gate, as for a new worktree), in any terminal:
 worktree, with your environment and permissions. wool asks before a file it
 hasn't seen runs (see [Trust](#trust)), but once you trust a file, it's the
 same trust you give `composer` scripts or npm `postinstall`: read the file
-before you answer `t`.
+before you answer `t`. `teardown` runs when you remove the worktree, from
+the copy saved at setup.
 
 `wool` itself runs programs (`git`, `sh`, the setup steps, the commands in
 `wool.yml`) and reads files outside its own folder (`.herdr/` files in
 your repos, its state in their git dirs, its trust store in
-`~/.config/wool/`). It doesn't use the network.
+`~/.config/wool/`). The only thing it deletes is its own teardown record,
+`<repo>/.git/wool/<name>/`, and `wool-teardown.sh` refuses any folder that
+isn't one. It doesn't use the network.
 
 ## Development
 
