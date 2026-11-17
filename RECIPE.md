@@ -9,8 +9,6 @@ becomes the dev server. What runs and which tabs appear come from
 have written runs only after you've trusted its exact contents in a `wool`
 prompt tab. wool itself never shows.
 
-![wool](preview.png)
-
 ## What you see
 
 - **Nothing of wool itself.** It runs as a frameless, kept window overlay that
