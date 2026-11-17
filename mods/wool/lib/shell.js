@@ -54,6 +54,11 @@ export function runArgv(binDir, stateDir, command) {
   return command === null || command === undefined ? argv : [...argv, "--", ...viaSh(command)];
 }
 
+// No terminal: output goes to <stateDir>/setup.log and the steps get no stdin.
+export function headlessRunArgv(binDir, stateDir) {
+  return ["sh", "-c", 'exec sh "$1" "$2" > "$2/setup.log" 2>&1 < /dev/null', "sh", `${binDir}/wool-run.sh`, stateDir];
+}
+
 export function waitArgv(binDir, stateDir, command) {
   return ["sh", `${binDir}/wool-wait.sh`, stateDir, "--", ...viaSh(command)];
 }

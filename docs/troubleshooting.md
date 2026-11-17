@@ -94,6 +94,6 @@ Herdr, or while its setup is still running.
 
 wool keeps its per-worktree state in the worktree's private git directory,
 `<repo>/.git/worktrees/<name>/wool/`. It holds the claim, `setup.sh`, `status`,
-the background command logs, and `config.yml`, the copy of the config that wool
+`setup.log` (with `setupIn: background`), the background command logs, and `config.yml`, the copy of the config that wool
 checksummed. It never shows in `git status` and goes away with
 `git worktree remove`.

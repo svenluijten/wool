@@ -2,7 +2,7 @@
 // commands. Refs (t<tab>p<pane>, "setup") name panes before they exist;
 // main.js maps them to real ids as each one appears.
 
-import { runArgv, waitArgv, bgArgv, withEnv } from "./shell.js";
+import { runArgv, waitArgv, bgArgv, headlessRunArgv, withEnv } from "./shell.js";
 
 const POSIX_SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh"]);
 const NO_AGENT = "No installed agent found; the Agent tab is a plain shell.";
@@ -20,7 +20,15 @@ export function keepShell(argv, shell) {
   return ["sh", "-c", '"$@"; exec "$0" -l', shell, ...argv];
 }
 
+// Commands started without a terminal get the app's bare PATH. An interactive
+// login shell reads the person's rc files, as Herdr's tabs do.
+export function inLoginShell(argv, shell) {
+  if (!POSIX_SHELLS.has(shell.split("/").pop())) return argv;
+  return [shell, "-lic", 'exec "$@"', shell, ...argv];
+}
+
 const setupTab = (ctx) => ({ op: "tab", ref: "setup", name: "Setup", argv: runArgv(ctx.binDir, ctx.stateDir, null), task: null });
+const setupInBackground = (ctx) => ({ op: "setupInBackground", argv: inLoginShell(headlessRunArgv(ctx.binDir, ctx.stateDir), ctx.shell) });
 
 function paneArgv(pane, hasSetup, ctx) {
   if (pane.kind === "shell") return pane.setup && hasSetup ? runArgv(ctx.binDir, ctx.stateDir, null) : null;
@@ -38,6 +46,9 @@ export function planLayout(ws, hasSetup, ctx) {
   };
   let focusRef = null;
   let agentRef = null;
+  const headless = ws.setupIn === "background";
+  // First, so panes and background commands that wait find its status at once.
+  if (hasSetup && headless) steps.push(setupInBackground(ctx));
 
   ws.tabs.forEach((tab, ti) => {
     tab.panes.forEach((pane, pi) => {
@@ -64,11 +75,11 @@ export function planLayout(ws, hasSetup, ctx) {
     });
   });
 
-  if (hasSetup && !ws.tabs.some((t) => t.panes.some((p) => p.setup))) steps.push(setupTab(ctx));
+  if (hasSetup && !headless && !ws.tabs.some((t) => t.panes.some((p) => p.setup))) steps.push(setupTab(ctx));
 
   ws.background.forEach((b, n) => {
     const argv = bgArgv(ctx.binDir, ctx.stateDir, n, b.waitForSetup && hasSetup, b.command);
-    steps.push({ op: "background", argv: withEnv(argv, { ...ws.env, ...b.env }) });
+    steps.push({ op: "background", argv: inLoginShell(withEnv(argv, { ...ws.env, ...b.env }), ctx.shell) });
   });
 
   steps.push({ op: "closeOriginal" });
@@ -76,8 +87,9 @@ export function planLayout(ws, hasSetup, ctx) {
   return { steps, warnings };
 }
 
-export function planSetupOnly(hasSetup, ctx) {
-  return { steps: hasSetup ? [setupTab(ctx)] : [], warnings: [] };
+export function planSetupOnly(hasSetup, ctx, setupIn = "tab") {
+  if (!hasSetup) return { steps: [], warnings: [] };
+  return { steps: [setupIn === "background" ? setupInBackground(ctx) : setupTab(ctx)], warnings: [] };
 }
 
 // knownAgents() is most-picked first: "default" is the first installed one;

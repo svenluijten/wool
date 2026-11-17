@@ -107,6 +107,21 @@ test("setup: rejects an unknown step field", () => rejects(validateConfig, steps
 test("setup: rejects an unknown top-level field", () => rejects(validateConfig, steps([], { hooks: {} }), /unknown field "hooks"/));
 test("setup: rejects a list in env", () => rejects(validateConfig, steps([{ run: "x", env: { A: [1] } }]), /env\.A/));
 
+test("setup: runs in a tab by default", () => {
+  assert.equal(validateConfig(steps([]), FILE).setupIn, "tab");
+  assert.equal(validateConfig(one({}), FILE).setupIn, "tab");
+});
+
+test("setup: can run in the background, with or without tabs", () => {
+  assert.equal(validateConfig(steps([{ run: "x" }], { setupIn: "background" }), FILE).setupIn, "background");
+  assert.equal(validateConfig(ws([{ panes: [{ command: "x", waitForSetup: true }] }], { setup: [{ run: "y" }], setupIn: "background" }), FILE).setupIn, "background");
+});
+
+test("setup: rejects an unknown setupIn", () => rejects(validateConfig, steps([], { setupIn: "pane" }), /setupIn.*tab or background/));
+test("setup: rejects setupIn background with a setup pane", () =>
+  rejects(validateConfig, ws([{ panes: [{ command: "x", setup: true }] }], { setup: [], setupIn: "background" }),
+    /tabs\[0\]\.panes\[0\].*"setup: true" can't be used with "setupIn: background"/));
+
 // ---- teardown ------------------------------------------------------------
 
 test("teardown: steps validate like setup steps, with the top-level env", () => {

@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, realpa
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { shellQuote, setupScript, teardownScript, runArgv, waitArgv, bgArgv, withEnv } from "../mods/wool/lib/shell.js";
+import { shellQuote, setupScript, teardownScript, runArgv, waitArgv, bgArgv, headlessRunArgv, withEnv } from "../mods/wool/lib/shell.js";
 
 const BIN = join(dirname(fileURLToPath(import.meta.url)), "..", "mods", "wool", "bin");
 const tmp = (name = "wool test ") => mkdtempSync(join(tmpdir(), name));
@@ -119,6 +119,29 @@ test("wool-run writes failed <label> and does not run the command", () => {
   assert.ok(!existsSync(join(worktree, "cmd.txt")));
   assert.match(r.stdout, /boom/);
   assert.match(r.stdout + r.stderr, /not starting/);
+});
+
+test("headless wool-run writes ok and its output to setup.log", () => {
+  const { dir } = state([{ name: "s", run: "echo from-step", env: {} }]);
+  const r = run(headlessRunArgv(BIN, dir));
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.stdout, "");
+  assert.equal(status(dir), "ok");
+  assert.match(readFileSync(join(dir, "setup.log"), "utf8"), /from-step[\s\S]*setup finished/);
+});
+
+test("headless wool-run writes failed <label>, with the output in setup.log", () => {
+  const { dir } = state([{ name: "Install deps", run: "echo boom; exit 2", env: {} }]);
+  const r = run(headlessRunArgv(BIN, dir));
+  assert.notEqual(r.status, 0);
+  assert.equal(status(dir), "failed Install deps");
+  assert.match(readFileSync(join(dir, "setup.log"), "utf8"), /boom/);
+});
+
+test("headless wool-run gives the steps no stdin", () => {
+  const { dir } = state([{ name: "read", run: "read x", env: {} }]);
+  run(headlessRunArgv(BIN, dir), { input: "typed\n" });
+  assert.equal(status(dir), "failed read");
 });
 
 test("wool-run killed with SIGHUP writes failed interrupted", async () => {

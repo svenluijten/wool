@@ -10,12 +10,13 @@ export class ConfigError extends Error {
   }
 }
 
-export const CONFIG_FIELDS = ["version", "env", "setup", "tabs", "background", "teardown"];
+export const CONFIG_FIELDS = ["version", "env", "setup", "setupIn", "tabs", "background", "teardown"];
 export const SETUP_STEP_FIELDS = ["name", "run", "env"];
 export const TAB_FIELDS = ["title", "panes"];
 export const PANE_FIELDS = ["command", "agent", "prompt", "env", "split", "setup", "waitForSetup", "focus"];
 export const BACKGROUND_FIELDS = ["command", "env", "waitForSetup"];
 
+const SETUP_IN = ["tab", "background"];
 const SPLITS = { right: "right", down: "down", vertical: "right", horizontal: "down" };
 
 function checker(file) {
@@ -77,7 +78,7 @@ function validateSteps(c, list, topEnv, key) {
   });
 }
 
-// Returns { env, steps, tabs, background, teardown }. tabs is null when the
+// Returns { env, steps, setupIn, tabs, background, teardown }. tabs is null when the
 // file has no layout; steps and teardown are [] when it has none.
 export function validateConfig(value, file) {
   const c = checker(file);
@@ -88,14 +89,16 @@ export function validateConfig(value, file) {
   const env = c.env(value.env, "env");
   const steps = validateSteps(c, value.setup, env, "setup");
   const teardown = validateSteps(c, value.teardown, env, "teardown");
+  const setupIn = none(value.setupIn) ? "tab" : value.setupIn;
+  if (!SETUP_IN.includes(setupIn)) c.fail("setupIn", `expected ${SETUP_IN.join(" or ")}`);
   if (none(value.tabs)) {
     if (!none(value.background)) c.fail("background", 'needs "tabs" (background commands are part of the layout)');
-    return { env, steps, tabs: null, background: [], teardown };
+    return { env, steps, setupIn, tabs: null, background: [], teardown };
   }
-  return { ...validateLayout(c, value, env), steps, teardown };
+  return { ...validateLayout(c, value, env, setupIn), steps, setupIn, teardown };
 }
 
-function validateLayout(c, value, env) {
+function validateLayout(c, value, env, setupIn) {
   if (!Array.isArray(value.tabs) || value.tabs.length === 0) c.fail("tabs", "needs at least one tab");
   let setupAt = null;
   let focusAt = null;
@@ -125,6 +128,7 @@ function validateLayout(c, value, env) {
 
       const setup = c.bool(p.setup, `${path}.setup`);
       if (setup && kind === "agent") c.fail(path, '"setup: true" can\'t be on an agent pane');
+      if (setup && setupIn === "background") c.fail(path, '"setup: true" can\'t be used with "setupIn: background"');
       if (setup) {
         if (setupAt) c.fail(path, `only one pane can have "setup: true" (${setupAt} has it too)`);
         setupAt = path;

@@ -181,13 +181,13 @@ export default class Wool extends View {
       const known = await knownAgents().catch(() => []);
       ctx.agentArgv = (name) => pickAgent(known, name);
     }
-    const plan = layout ? planLayout(cfg, hasSetup, ctx) : planSetupOnly(hasSetup, ctx);
+    const plan = layout ? planLayout(cfg, hasSetup, ctx) : planSetupOnly(hasSetup, ctx, cfg.setupIn);
     if (plan.warnings.length > 0) {
       notify({ title: `wool: ${wt.branch || tilde(wt.worktree)}`, body: plan.warnings.join("\n"), level: "warning" });
     }
 
     await this.execute(cx, space, wt, plan.steps);
-    if (hasSetup) await this.watchSetup(cx, wt);
+    if (hasSetup) await this.watchSetup(cx, wt, space, cfg.setupIn);
     const bg = plan.steps.filter((s) => s.op === "background").length;
     if (bg > 0) await this.watchBackground(cx, wt, bg);
   }
@@ -444,6 +444,9 @@ export default class Wool extends View {
         const pane = await waitFor(cx, () => [...paneIds(from.tab)].find((id) => !old.has(id)));
         if (!pane) return this.stepFailed(step, refs);
         refs.set(step.ref, { tab: from.tab, pane });
+      } else if (step.op === "setupInBackground") {
+        const r = await exec("sh", ["-c", 'nohup "$@" >/dev/null 2>&1 </dev/null &', "sh", ...step.argv], { cwd: wt.worktree });
+        if (r.code !== 0) notify({ title: "wool: setup didn't start", body: r.stderr.trim(), level: "error" });
       } else if (step.op === "background") {
         const r = await exec("sh", ["-c", 'nohup "$@" >/dev/null 2>&1 &', "sh", ...step.argv], { cwd: wt.worktree });
         if (r.code !== 0) notify({ title: "wool: a background command didn't start", body: step.argv.join(" "), level: "error" });
@@ -474,7 +477,7 @@ export default class Wool extends View {
     return refs;
   }
 
-  async watchSetup(cx, wt) {
+  async watchSetup(cx, wt, space, setupIn) {
     const name = wt.branch || tilde(wt.worktree);
     let missing = 0;
     for (;;) {
@@ -489,7 +492,7 @@ export default class Wool extends View {
         notify({ title: `wool: ${name} is ready`, level: "success" });
       } else {
         const step = status.replace(/^failed\s*/, "");
-        const pane = this.setupPaneOf(wt);
+        const pane = setupIn === "background" ? await this.openSetupLog(cx, space, wt) : this.setupPaneOf(wt);
         notify({
           title: "wool: setup failed",
           body: step === "interrupted" ? `Setup in ${name} was interrupted.` : `Step '${step}' failed in ${name}.`,
@@ -499,6 +502,17 @@ export default class Wool extends View {
       }
       return;
     }
+  }
+
+  // Setup ran without a terminal: show its output in a tab, without taking focus.
+  async openSetupLog(cx, space, wt) {
+    const before = focused();
+    const old = tabIdsOf(space.id);
+    run("tab.new", { space: space.id, name: "Setup", folder: wt.worktree, argv: ["sh", "-c", 'cat "$1"', "sh", `${wt.stateDir}/setup.log`] });
+    const tab = await waitFor(cx, () => [...tabIdsOf(space.id)].find((id) => !old.has(id)));
+    const pane = tab ? await waitFor(cx, () => panes().find((p) => p.tab === tab)?.pane) : null;
+    if (before?.pane) run("pane.focus", { pane: before.pane });
+    return pane;
   }
 
   // The pane running wool-run.sh for this worktree, found through its terminal.

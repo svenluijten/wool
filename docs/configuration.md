@@ -66,6 +66,7 @@ Tabs without setup are fine too.
 | `setup[].run` | Required. Runs as `/bin/sh -c <run>` in the new worktree. |
 | `setup[].name` | The label shown while the step runs. Default: the command. |
 | `setup[].env` | Extra environment variables for this step. |
+| `setupIn` | `tab` (default) or `background`. See [Setup in the background](#setup-in-the-background). |
 | `tabs[]` | The tabs to create, in order (at least one). Only used when the space arrives as a plain shell; see [Which spaces wool acts on](spaces.md#what-wool-does-in-each-space). |
 | `tabs[].title` | The tab's name. Default: its number. |
 | `tabs[].panes[]` | The tab's panes (at least one). The first pane fills the tab; each later pane splits off the one before it. |
@@ -85,11 +86,37 @@ A pane with neither `command` nor `agent` is a plain shell.
 wool rejects the file if it has unknown fields, a pane with both `command`
 and `agent`, a `prompt` without `agent`, or more than one `setup: true` pane.
 
+## Setup in the background
+
+With `setupIn: background`, setup runs without a terminal and wool adds no
+"Setup" tab. You get the usual "ready" notification when it succeeds. When it
+fails, wool opens a "Setup" tab with its output, without taking focus, and the
+failure notification focuses that tab when you click it.
+
+Setup runs through your interactive login shell (`zsh -lic`, for example), so
+it gets the `PATH` from your shell's startup files. This doesn't work with
+fish or other shells that aren't POSIX shells.
+
+Setup's output goes to `wool/setup.log` in the worktree's git dir. Panes and
+background commands with `waitForSetup` wait for it as usual.
+
+Setup steps get no input: a step that asks a question reads nothing and
+usually fails. `setupIn: background` can't be combined with a `setup: true`
+pane, because that pane is where setup runs.
+
+```yaml
+version: 1
+setupIn: background
+setup:
+  - run: npm ci
+```
+
 ## Background commands
 
 Each `background[]` entry has a `command` and optional `env` and
 `waitForSetup`, with the same meaning as for panes. Background commands need
-`tabs`.
+`tabs`. Like setup in the background, they run through your interactive login
+shell to get your `PATH`.
 
 wool writes each command's output, process ID and exit code to files in the
 worktree's git dir: `wool/bg-<n>.log`, `wool/bg-<n>.pid` and

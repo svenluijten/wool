@@ -3,13 +3,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { register } from "node:module";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, realpathSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, realpathSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 register("./stubs/loader.mjs", import.meta.url);
 const { default: Wool } = await import("../mods/wool/main.js");
+const { setupScript, headlessRunArgv } = await import("../mods/wool/lib/shell.js");
 
 const MOD = join(dirname(fileURLToPath(import.meta.url)), "..", "mods", "wool");
 const CONFIG = "version: 1\nsetup:\n  - run: echo hi\n";
@@ -110,4 +111,51 @@ test("gate: a declined file runs nothing, silently", async () => {
   assert.equal(await t.wool.gate(t.cx, t.space, "plain-shell", t.wt, t.config), false);
   assert.deepEqual(globalThis.herdr.commands, []);
   assert.deepEqual(globalThis.herdr.notes, []);
+});
+
+// ---- setupIn: background ---------------------------------------------------
+
+test("execute: setupInBackground runs setup with no tab, its output in setup.log", async () => {
+  const t = setup();
+  mkdirSync(t.space.folder);
+  writeFileSync(join(t.state, "setup.sh"), setupScript([{ name: "s", run: "echo from-step", env: {} }], { HERDR_WORKTREE: t.space.folder, HERDR_MAIN_WORKTREE: t.wt.main, HERDR_BRANCH: "b" }));
+  await t.wool.execute(t.cx, t.space, t.wt, [{ op: "setupInBackground", argv: headlessRunArgv(t.wool.binDir, t.state) }]);
+  const status = () => (existsSync(join(t.state, "status")) ? readFileSync(join(t.state, "status"), "utf8").trim() : "");
+  for (let i = 0; i < 100 && status() !== "ok"; i++) await new Promise((r) => setTimeout(r, 50));
+  assert.equal(status(), "ok");
+  assert.match(readFileSync(join(t.state, "setup.log"), "utf8"), /from-step/);
+  assert.ok(!globalThis.herdr.commands.some((c) => c.name === "tab.new"));
+  assert.deepEqual(globalThis.herdr.notes, []);
+});
+
+test("watchSetup: a failed background setup opens a Setup tab with the log, and focus goes back", async () => {
+  const t = setup();
+  writeFileSync(join(t.state, "setup.log"), "boom\n");
+  writeFileSync(join(t.state, "status"), "failed Install deps\n");
+  await t.wool.watchSetup(t.cx, t.wt, t.space, "background");
+  const tab = globalThis.herdr.commands.find((c) => c.name === "tab.new");
+  assert.equal(tab.args.name, "Setup");
+  assert.equal(tab.args.space, "sp1");
+  assert.deepEqual(tab.args.argv, ["sh", "-c", 'cat "$1"', "sh", join(t.state, "setup.log")]);
+  const focus = globalThis.herdr.commands.find((c) => c.name === "pane.focus");
+  assert.deepEqual(focus.args, { pane: "p0" });
+  const note = globalThis.herdr.notes.find((n) => n.level === "error");
+  assert.match(note.body, /Step 'Install deps' failed/);
+  assert.deepEqual(note.action, { name: "pane.focus", args: { pane: `p-${t.space.tabs.at(-1).id}` } });
+});
+
+test("watchSetup: a background setup that succeeds opens no tab", async () => {
+  const t = setup();
+  writeFileSync(join(t.state, "status"), "ok\n");
+  await t.wool.watchSetup(t.cx, t.wt, t.space, "background");
+  assert.deepEqual(globalThis.herdr.commands, []);
+  assert.equal(globalThis.herdr.notes[0].level, "success");
+});
+
+test("watchSetup: a failed setup in a tab opens no extra tab", async () => {
+  const t = setup();
+  writeFileSync(join(t.state, "status"), "failed Install deps\n");
+  await t.wool.watchSetup(t.cx, t.wt, t.space, "tab");
+  assert.deepEqual(globalThis.herdr.commands, []);
+  assert.equal(globalThis.herdr.notes[0].level, "error");
 });

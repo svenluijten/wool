@@ -62,6 +62,15 @@
         }
       }
     },
+    "setupIn": {
+      "type": "string",
+      "enum": [
+        "tab",
+        "background"
+      ],
+      "default": "tab",
+      "description": "Where setup runs: in a tab you can watch, or in the background with its output in setup.log (a tab opens only if it fails). background can't be combined with a setup: true pane."
+    },
     "tabs": {
       "type": "array",
       "minItems": 1,

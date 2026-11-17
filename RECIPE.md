@@ -21,6 +21,9 @@ prompt tab. wool itself never shows.
   tab named `Setup`) prints `==> <step name>` before each step, the steps' own
   output, then `wool: setup finished.` and the pane's command, or
   `wool: step '<name>' failed (exit N)` and a shell prompt.
+  With `setupIn: background` there is no setup terminal: `wool-run.sh` runs
+  under `nohup` with stdin `/dev/null` and output in `<stateDir>/setup.log`;
+  only a failure opens a `Setup` tab that `cat`s the log (focus given back).
 - **A `wool` tab**, when the space's config isn't trusted yet: repo, file,
   SHA-256 and the file's contents (control characters stripped), then
   `[d]ecline  trust [o]nce  [t]rust project:`. It closes once answered.
@@ -91,7 +94,7 @@ prompt tab. wool itself never shows.
   `schema.js` (validation + normalisation), `config.js` (lookup order:
   main `wool.yml`, worktree `wool.yml`, worktree `wool.yml.dist`, main
   `wool.yml.dist`), `detect.js` (classification, claim parsing), `shell.js` (setup script,
-  argv builders), `plan.js` (steps: `tab`, `split`, `background`,
+  argv builders), `plan.js` (steps: `tab`, `split`, `setupInBackground`, `background`,
   `closeOriginal`, `focus`), `trust.js` (`parseCheck`, `readAnswer`, `requestNonce`,
   `promptTab`, `spaceForFolder`).
 - `mods/wool/bin/` (POSIX `sh`): `wool-claim.sh` (`mkdir <git-dir>/wool` as an
@@ -121,6 +124,9 @@ prompt tab. wool itself never shows.
   `[shell, "-lic", '"$@"; exec "$0" -li', shell, ...argv]`.
 - `tab.new` takes focus and switches the window to its space. Give focus back
   with `pane.focus {pane}` for spaces you don't lay out.
+- `exec` runs with the app's bare `PATH` (no Herd, nvm, Homebrew). Anything
+  started without a terminal goes through `inLoginShell` (`$SHELL -lic 'exec
+  "$@"'`); tools are often added in `.zshrc`, so `-l` alone isn't enough.
 - `git rev-parse --git-dir` is relative (`.git`) in a main checkout: compare
   `--path-format=absolute` dirs. Git sanitises a worktree's admin-dir name
   (`wt b` → `wt-b`).

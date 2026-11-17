@@ -4,10 +4,10 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { planLayout, planSetupOnly, keepShell } from "../mods/wool/lib/plan.js";
+import { planLayout, planSetupOnly, keepShell, inLoginShell } from "../mods/wool/lib/plan.js";
 import { validateConfig } from "../mods/wool/lib/schema.js";
 import { parseYaml } from "../mods/wool/lib/yaml.js";
-import { runArgv, waitArgv, bgArgv } from "../mods/wool/lib/shell.js";
+import { runArgv, waitArgv, bgArgv, headlessRunArgv } from "../mods/wool/lib/shell.js";
 
 const ctx = { binDir: "/mods/wool/bin", stateDir: "/repo/.git/worktrees/x/wool", agentArgv: ["claude"], shell: "/bin/zsh" };
 const W = (yaml) => validateConfig(parseYaml(yaml), "/f");
@@ -46,6 +46,20 @@ test("keepShell runs the command, then the shell", () => {
   const argv = keepShell(["sh", "-c", "echo 'it''s one'"], fake);
   const r = spawnSync(argv[0], argv.slice(1), { encoding: "utf8" });
   assert.equal(r.stdout, "its one\nshell:-l\n");
+});
+
+test("inLoginShell runs argv in an interactive login shell, for its PATH", () => {
+  assert.deepEqual(inLoginShell(["sh", "-c", "x"], "/bin/zsh"), ["/bin/zsh", "-lic", 'exec "$@"', "/bin/zsh", "sh", "-c", "x"]);
+});
+
+test("inLoginShell leaves argv as it is for other shells", () => {
+  assert.deepEqual(inLoginShell(["a", "b c"], "/opt/homebrew/bin/fish"), ["a", "b c"]);
+});
+
+test("inLoginShell passes arguments through unchanged", () => {
+  const argv = inLoginShell(["sh", "-c", 'printf "%s|" "$@"', "sh", "it's", "$HOME", "a b"], "/bin/sh");
+  const r = spawnSync(argv[0], argv.slice(1), { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  assert.equal(r.stdout, "it's|$HOME|a b|");
 });
 
 test("quiz example", () => {
@@ -131,6 +145,18 @@ test("adds a Setup tab when setup exists but no pane is marked setup", () => {
   assert.deepEqual(steps[3], { op: "focus", ref: "t0p0" });
 });
 
+test("setupIn background starts setup first, without a Setup tab", () => {
+  const ws = W("version: 1\nsetupIn: background\ntabs:\n  - title: Agent\n    panes:\n      - agent: default\n");
+  const { steps } = planLayout(ws, true, ctx);
+  assert.deepEqual(ops(steps), ["setupInBackground", "tab", "closeOriginal", "focus"]);
+  assert.deepEqual(steps[0], { op: "setupInBackground", argv: inLoginShell(headlessRunArgv(ctx.binDir, ctx.stateDir), ctx.shell) });
+});
+
+test("setupIn background with no setup starts nothing", () => {
+  const ws = W("version: 1\nsetupIn: background\ntabs:\n  - panes:\n      - {}\n");
+  assert.deepEqual(ops(planLayout(ws, false, ctx).steps), ["tab", "closeOriginal", "focus"]);
+});
+
 test("no Setup tab when there's no setup", () => {
   const ws = W("version: 1\ntabs:\n  - panes:\n      - agent: default\n");
   assert.deepEqual(ops(planLayout(ws, false, ctx).steps), ["tab", "closeOriginal", "focus"]);
@@ -198,12 +224,12 @@ background:
 `);
   const { steps } = planLayout(ws, true, ctx);
   assert.deepEqual(steps.filter((s) => s.op === "background"), [
-    { op: "background", argv: ["env", "A=1", ...bgArgv(ctx.binDir, ctx.stateDir, 0, true, "npm run watch")] },
-    { op: "background", argv: ["env", "A=1", "B=2", ...bgArgv(ctx.binDir, ctx.stateDir, 1, false, "redis-server")] },
+    { op: "background", argv: inLoginShell(["env", "A=1", ...bgArgv(ctx.binDir, ctx.stateDir, 0, true, "npm run watch")], ctx.shell) },
+    { op: "background", argv: inLoginShell(["env", "A=1", "B=2", ...bgArgv(ctx.binDir, ctx.stateDir, 1, false, "redis-server")], ctx.shell) },
   ]);
   assert.deepEqual(ops(steps), ["tab", "tab", "background", "background", "closeOriginal", "focus"]);
   assert.deepEqual(planLayout(ws, false, ctx).steps.find((s) => s.op === "background").argv,
-    ["env", "A=1", ...bgArgv(ctx.binDir, ctx.stateDir, 0, false, "npm run watch")]);
+    inLoginShell(["env", "A=1", ...bgArgv(ctx.binDir, ctx.stateDir, 0, false, "npm run watch")], ctx.shell));
 });
 
 test("planSetupOnly with and without setup", () => {
@@ -212,6 +238,14 @@ test("planSetupOnly with and without setup", () => {
     warnings: [],
   });
   assert.deepEqual(planSetupOnly(false, ctx), { steps: [], warnings: [] });
+});
+
+test("planSetupOnly in the background", () => {
+  assert.deepEqual(planSetupOnly(true, ctx, "background"), {
+    steps: [{ op: "setupInBackground", argv: inLoginShell(headlessRunArgv(ctx.binDir, ctx.stateDir), ctx.shell) }],
+    warnings: [],
+  });
+  assert.deepEqual(planSetupOnly(false, ctx, "background"), { steps: [], warnings: [] });
 });
 
 test("pickAgent: default is the first installed, a name must match an installed key", async () => {
