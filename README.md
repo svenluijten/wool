@@ -4,8 +4,9 @@ A mod for the [Herdr](https://herdr.dev) app that allows you to hook into a work
 
 When a worktree space is created, `wool` runs the repo's setup steps (copy `.env`, install dependencies, …) 
 in a terminal you can watch, and lays out the space's tabs: your agent, a shell, a dev server that starts
-once setup has succeeded. Both are described by declarative files committed to the repo, with an option for
-personal overrides.
+once setup has succeeded. When that worktree is removed, its teardown steps run (remove test database, remove
+proxy, clean up dev server, …). All of this can be configured in a declarative YAML file committed to the repo,
+with an option for personal overrides.
 
 ![wool](preview.png)
 
