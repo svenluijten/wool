@@ -29,9 +29,7 @@ What wool does depends on how the new space arrives.
 **One tab with a plain shell.** This is what "New worktree" and "Open
 worktree" create. wool runs the setup steps and builds the layout from `tabs`.
 If the config has no `tabs`, or has no pane with `setup: true`, setup runs in
-an added "Setup" tab that doesn't take focus. With `setupIn: background`
-there is no Setup tab unless setup fails; see
-[Setup in the background](configuration.md#setup-in-the-background).
+an added "Setup" tab that doesn't take focus.
 
 **Any other way.** For example a briefed agent started from a script, or the
 worktree mod's `{branch, tab, argv}` form. wool runs the setup steps in an
