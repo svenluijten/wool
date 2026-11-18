@@ -1,5 +1,5 @@
 #!/bin/sh
-# wool-run.sh <stateDir> [-- command...]
+# wool run <stateDir> [-- command...]
 # Runs <stateDir>/setup.sh in this terminal and records the result in
 # <stateDir>/status: running, then ok or "failed <step>". On ok it execs the
 # command (if any); on failure it leaves the error on screen and exits.

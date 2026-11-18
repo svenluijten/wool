@@ -45,7 +45,7 @@ Homebrew, nvm, …).
 The worktree's files are gone by then, so a step can't read the worktree's
 `.env` or any other file in it. To find resources that setup created, work out
 their names from the branch in both setup and teardown, as the example does
-with `HERDR_BRANCH_SLUG`. Teardown steps get the same variables as setup steps; see
+with `HERDR_BRANCH_SLUG`. Teardown steps get the same variables and `wool` command as setup steps; see
 [Environment variables](configuration.md#environment-variables).
 
 For example, a worktree that runs its own Docker Compose project can't run
@@ -85,7 +85,7 @@ step and the location of `teardown.log` in that folder. It also gives the
 command to run teardown again:
 
 ```sh
-sh "<wool>/bin/wool-teardown.sh" "<repo>/.git/wool/<worktree name>"
+wool teardown "<repo>/.git/wool/<worktree name>"
 ```
 
 The notification shows the real paths, so copy the command from it. wool never

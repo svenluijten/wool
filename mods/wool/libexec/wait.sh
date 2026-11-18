@@ -1,5 +1,5 @@
 #!/bin/sh
-# wool-wait.sh <stateDir> -- command...
+# wool wait <stateDir> -- command...
 # Waits for wool's setup to finish, then execs the command if it succeeded.
 # Gives up (exit 1) when setup failed, when the runner died without a result,
 # or when no status shows up within WOOL_WAIT_MISSING_SECS (default 10).

@@ -1,5 +1,5 @@
 #!/bin/sh
-# wool-records.sh <folder>
+# wool records <folder>
 # Lists the teardown records of the repo that <folder> belongs to (any of its
 # checkouts), one per line: <record><TAB><worktree>. Prints nothing outside a repo.
 set -u

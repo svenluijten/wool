@@ -43,7 +43,7 @@
           "run": {
             "type": "string",
             "minLength": 1,
-            "description": "Run as /bin/sh -c <run> in the new worktree. Gets HERDR_WORKTREE, HERDR_MAIN_WORKTREE, HERDR_BRANCH and HERDR_BRANCH_SLUG."
+            "description": "Run as /bin/sh -c <run> in the new worktree. Gets HERDR_WORKTREE, HERDR_MAIN_WORKTREE, HERDR_BRANCH, HERDR_BRANCH_SLUG, and wool (wool port) on PATH."
           },
           "env": {
             "type": "object",
@@ -257,7 +257,7 @@
           "run": {
             "type": "string",
             "minLength": 1,
-            "description": "Run as /bin/sh -c <run> in the main checkout, through your login shell. Gets the same variables as setup."
+            "description": "Run as /bin/sh -c <run> in the main checkout, through your login shell. Gets the same variables and wool command as setup."
           },
           "env": {
             "type": "object",

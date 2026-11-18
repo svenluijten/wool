@@ -1,9 +1,9 @@
 // Small pure helpers for wool's trust gate. The gate itself (checksum, store,
-// gitignore check, the prompt) lives in bin/wool-trust.sh; these read what it prints.
+// gitignore check, the prompt) lives in libexec/trust.sh; these read what it prints.
 
 const VERDICTS = new Set(["implicit", "trusted", "declined", "ask"]);
 
-// Reads `wool-trust.sh check`'s one line: "<verdict>\t<sha256>".
+// Reads `wool trust check`'s one line: "<verdict>\t<sha256>".
 export function parseCheck(stdout) {
   const line = String(stdout ?? "").replace(/\r?\n$/, "");
   const [verdict, sha, ...rest] = line.split("\t");
@@ -13,7 +13,7 @@ export function parseCheck(stdout) {
 
 const ANSWERS = new Set(["trust", "once", "decline", "none"]);
 
-// Reads <state dir>/trust-answer ("<answer>\t<nonce>") as `wool-trust.sh prompt`
+// Reads <state dir>/trust-answer ("<answer>\t<nonce>") as `wool trust prompt`
 // writes it; null until there is an answer to *this* question (its nonce).
 export function readAnswer(text, nonce) {
   const [word, n, ...rest] = String(text ?? "").replace(/\r?\n$/, "").split("\t");
@@ -28,10 +28,10 @@ export function requestNonce(text) {
 
 // The tab wool adds to a space to ask about its config.
 export function promptTab(binDir, stateDir) {
-  return { name: "wool", argv: ["sh", `${binDir}/wool-trust.sh`, "prompt", stateDir] };
+  return { name: "wool", argv: ["sh", `${binDir}/wool`, "trust", "prompt", stateDir] };
 }
 
-// The open local space for a worktree folder (wool-trust.sh run), or null.
+// The open local space for a worktree folder (wool rerun), or null.
 export function spaceForFolder(spaces, folder) {
   const norm = (p) => String(p ?? "").replace(/(.)\/$/, "$1");
   const want = norm(folder);

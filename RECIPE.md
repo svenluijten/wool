@@ -21,7 +21,7 @@ prompt tab. wool itself never shows.
   tab named `Setup`) prints `==> <step name>` before each step, the steps' own
   output, then `wool: setup finished.` and the pane's command, or
   `wool: step '<name>' failed (exit N)` and a shell prompt.
-  With `setupIn: background` there is no setup terminal: `wool-run.sh` runs
+  With `setupIn: background` there is no setup terminal: `wool run` runs
   under `nohup` with stdin `/dev/null` and output in `<stateDir>/setup.log`;
   only a failure opens a `Setup` tab that `cat`s the log (focus given back).
 - **A `wool` tab**, when the space's config isn't trusted yet: repo, file,
@@ -52,7 +52,7 @@ prompt tab. wool itself never shows.
   that had it. No `setup` and no layout → nothing.
 - Trust gate, after the claim and a valid config, only when something would
   run: the text wool read is written to `<git-dir>/wool/config.yml` and
-  `wool-trust.sh check` checksums it. A gitignored `wool.yml` is trusted; otherwise
+  `wool trust check` checksums it. A gitignored `wool.yml` is trusted; otherwise
   a `trusted` entry for this repo + checksum runs, a `declined` one does
   nothing silently, no entry opens the `wool` prompt tab. Plain-shell spaces:
   the prompt has focus. Others: focus goes back, plus a warning notification.
@@ -62,7 +62,7 @@ prompt tab. wool itself never shows.
   wool polls `trust-answer` (`trust`/`once` → carry on; `decline`/`none` →
   close the tab, info notification, nothing runs). A tab that vanishes
   without an answer counts as `none` after 2 s.
-- `wool-trust.sh run <folder>` drops a file in `~/.config/wool/requests/`; wool
+- `wool rerun <folder>` drops a file in `~/.config/wool/requests/`; wool
   watches that folder (`watchFolder` plus a 5 s timer), takes each request,
   clears the worktree's `<git-dir>/wool` (unless setup is `running`), and
   handles its open space as new, any age, through the gate.
@@ -101,20 +101,29 @@ prompt tab. wool itself never shows.
   argv builders), `plan.js` (steps: `tab`, `split`, `setupInBackground`, `background`,
   `closeOriginal`, `focus`), `trust.js` (`parseCheck`, `readAnswer`, `requestNonce`,
   `promptTab`, `spaceForFolder`).
-- `mods/wool/bin/` (POSIX `sh`): `wool-claim.sh` (`mkdir <git-dir>/wool` as an
+- `mods/wool/bin/wool` (POSIX `sh`, executable): the one command. It resolves
+  its own symlinks, exports `WOOL_CLI` (its path, for commands it prints) and
+  `exec`s `libexec/<command>.sh`, so pids and signals are the command's own.
+  main.js always runs it as `sh <bin>/wool …`; setup and teardown scripts put
+  `bin/` first on `PATH` for steps. Commands for people: `port`, `rerun`,
+  `teardown`, `trust list|forget`, `help`. Internal: `claim`, `run`, `wait`,
+  `bg`, `records`, `trust check|prompt|_take`.
+- `mods/wool/libexec/` (POSIX `sh`): `claim.sh` (`mkdir <git-dir>/wool` as an
   atomic claim; prints `claimed<TAB>git-dir<TAB>main<TAB>branch<TAB>top`),
-  `wool-run.sh` (runs `setup.sh`, writes `status`: `running` → `ok` /
+  `run.sh` (runs `setup.sh`, writes `status`: `running` → `ok` /
   `failed <step>`, traps HUP/INT/TERM and stops the step's process tree, then
   `exec`s the pane command),
-  `wool-wait.sh` (polls `status` once a second; gives up on `failed`, a dead
-  runner pid, or no status for 10 s), `wool-bg.sh` (background command to
-  `bg-<n>.log`/`bg-<n>.pid`/`bg-<n>.exit`), `wool-trust.sh` (`check`, `list`,
-  `forget`, `run`, `prompt`; store `trust.tsv` rewritten under a `mkdir` lock
-  with temp file + `mv`; no `trust` subcommand). `wool-claim.sh <folder> rerun`
-  skips the age check and clears old state. `wool-teardown.sh` (runs a
-  record's `teardown.sh` once its worktree is gone).
+  `wait.sh` (polls `status` once a second; gives up on `failed`, a dead
+  runner pid, or no status for 10 s), `bg.sh` (background command to
+  `bg-<n>.log`/`bg-<n>.pid`/`bg-<n>.exit`), `trust.sh` (`check`, `list`,
+  `forget`, `rerun`, `prompt`, `_take`; store `trust.tsv` rewritten under a
+  `mkdir` lock with temp file + `mv`; nothing trusts a file but the prompt).
+  `wool claim <folder> rerun` skips the age check and clears old state.
+  `teardown.sh` (runs a record's `teardown.sh` once its worktree is gone).
+  `records.sh` (a repo's teardown records). `port.sh` (`cksum` of
+  `[name-]branch` into 10000-19999).
 - No shipped mods are changed. Programs run: `git`, `sh`, `find`, `nohup`,
-  `shasum`/`sha256sum`, and the repo's commands.
+  `shasum`/`sha256sum`, `cksum`, and the repo's commands.
 
 ## Watch out
 
@@ -167,4 +176,5 @@ prompt tab. wool itself never shows.
     nothing runs; `t` runs it and later worktrees run without asking; `o` runs
     it once; `d` runs nothing now or for later worktrees with that file; a
     changed file asks again; a gitignored `wool.yml` never asks.
-11. `wool-trust.sh forget` + `wool-trust.sh run` on a declined worktree asks again.
+11. `wool trust forget` + `wool rerun` on a declined worktree asks again.
+12. `wool port` in a setup step prints the same port every time for that branch, and a teardown step gets the same one.

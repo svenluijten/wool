@@ -78,10 +78,12 @@ See [Teardown](teardown.md).
 ## Running setup again
 
 wool runs setup once per worktree. To run wool for a worktree again, run this
-in any terminal, with the worktree's folder as the last argument:
+in any terminal, with the worktree's folder as the last argument (use
+`~/.config/herdr-app/mods/wool/bin/wool` if `wool` isn't on your `PATH`; see
+[Installation](../README.md#installation)):
 
 ```sh
-sh ~/.config/herdr-app/mods/wool/bin/wool-trust.sh run <folder>
+wool rerun <folder>
 ```
 
 wool handles the worktree as if it were new, whatever its age, and clears its

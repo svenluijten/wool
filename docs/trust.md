@@ -66,27 +66,28 @@ nothing runs.
 
 ## Managing decisions
 
-Run these from a terminal:
+Run these from a terminal (use `~/.config/herdr-app/mods/wool/bin/wool` if
+`wool` isn't on your `PATH`; see [Installation](../README.md#installation)):
 
 ```sh
-sh ~/.config/herdr-app/mods/wool/bin/wool-trust.sh list               # every trusted and declined file
-sh ~/.config/herdr-app/mods/wool/bin/wool-trust.sh forget <folder>    # forget every decision for <folder>'s repo
-sh ~/.config/herdr-app/mods/wool/bin/wool-trust.sh run <folder>       # set up that worktree again (asks again if needed)
+wool trust list               # every trusted and declined file
+wool trust forget <folder>    # forget every decision for <folder>'s repo
+wool rerun <folder>           # set up that worktree again (asks again if needed)
 ```
 
-`run` is how you recover in these cases:
+`rerun` is how you recover in these cases:
 
-- You declined (run `forget`, then `run`).
+- You declined (run `trust forget`, then `rerun`).
 - You closed the prompt without an answer.
 - wool restarted while a prompt was open.
 - You want to run setup for a worktree again.
 
-`run` needs the worktree's space to be open in Herdr. It never trusts anything
+`rerun` needs the worktree's space to be open in Herdr. It never trusts anything
 by itself.
 
-There is no `trust` command. Trusting a file takes an answer typed into
-wool's prompt, so a README, a task or an agent can't tell wool to trust
-something. Agents may use `list`, `forget` and `run`.
+No command trusts a file. Trusting one takes an answer typed into wool's
+prompt, so a README, a task or an agent can't tell wool to trust something.
+Agents may use `trust list`, `trust forget` and `rerun`.
 
 wool keeps decisions in `${XDG_CONFIG_HOME:-~/.config}/wool/trust.tsv`. Each
 line holds the checksum, `trusted` or `declined`, the repo (its main
@@ -108,5 +109,5 @@ repos, its state in their git directories, and its trust store in
 `~/.config/wool/`.
 
 The only thing wool deletes is its own teardown record,
-`<repo>/.git/wool/<name>/`. `wool-teardown.sh` refuses to delete any folder
+`<repo>/.git/wool/<name>/`. `wool teardown` refuses to delete any folder
 that isn't one. wool doesn't use the network.

@@ -34,7 +34,7 @@ export function newSpaces(known, spaces) {
   return spaces.filter((s) => !known.has(s.id));
 }
 
-// Reads wool-claim.sh's output; null unless this copy of wool claimed it.
+// Reads `wool claim`'s output; null unless this copy of wool claimed it.
 // recordDir sits in the common git dir because `git worktree remove` deletes
 // the worktree's own git dir, and teardown runs after that.
 export function parseClaim(stdout) {

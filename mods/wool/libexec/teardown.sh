@@ -1,5 +1,5 @@
 #!/bin/sh
-# wool-teardown.sh [--check] <record>
+# wool teardown [--check] <record>
 # <record> is <common git dir>/wool/<name>, written when setup ran. Once the
 # worktree named in <record>/worktree is gone, runs <record>/teardown.sh in the
 # main checkout (output in <record>/teardown.log), then deletes <record>.
@@ -16,11 +16,11 @@ if [ "${1:-}" = "--check" ]; then check=1; shift; fi
 
 # Refuse anything but <git dir>/wool/<name> with wool's files in it: this
 # script ends with rm -rf.
-rec=$(cd "${1:-}" 2>/dev/null && pwd -P) || { echo "wool-teardown: no such record: ${1:-}" >&2; exit 2; }
+rec=$(cd "${1:-}" 2>/dev/null && pwd -P) || { echo "wool teardown: no such record: ${1:-}" >&2; exit 2; }
 parent=$(dirname "$rec")
 if [ "$(basename "$parent")" != wool ] || [ ! -f "$(dirname "$parent")/HEAD" ] ||
   [ ! -f "$rec/worktree" ] || [ ! -f "$rec/teardown.sh" ]; then
-  echo "wool-teardown: not a wool record: $rec" >&2
+  echo "wool teardown: not a wool record: $rec" >&2
   exit 2
 fi
 

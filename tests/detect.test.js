@@ -7,7 +7,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { classifySpace, isPlainShellArgv, newSpaces, PENDING_LIMIT_MS, FRESH_MINUTES } from "../mods/wool/lib/detect.js";
 
-const CLAIM = join(dirname(fileURLToPath(import.meta.url)), "..", "mods", "wool", "bin", "wool-claim.sh");
+const CLAIM = join(dirname(fileURLToPath(import.meta.url)), "..", "mods", "wool", "bin", "wool");
 
 const shellProgram = { key: "shell", name: "zsh", shell: true, agent: false };
 const space = (tabs = [{ id: "tb1", panes: 1 }], machine = null) => ({ id: "sp1", machine, tabs });
@@ -81,7 +81,7 @@ test("newSpaces ignores known ids", () => {
   assert.deepEqual(newSpaces(known, [{ id: "a" }, { id: "c" }, { id: "b" }, { id: "d" }]).map((s) => s.id), ["c", "d"]);
 });
 
-// ---- wool-claim.sh -----------------------------------------------------
+// ---- wool claim --------------------------------------------------------
 
 function git(cwd, ...args) {
   return execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } }).trim();
@@ -97,12 +97,12 @@ function repo(name = "main repo") {
 }
 
 const claim = (folder) => {
-  const r = spawnSync("sh", [CLAIM, folder], { encoding: "utf8" });
+  const r = spawnSync("sh", [CLAIM, "claim", folder], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   return r.stdout.replace(/\n$/, "");
 };
 
-test("wool-claim: claims a fresh linked worktree once", () => {
+test("wool claim: claims a fresh linked worktree once", () => {
   const { root, main } = repo();
   const wt = join(root, "wt b");
   git(main, "worktree", "add", "-q", "-b", "b", wt);
@@ -112,7 +112,7 @@ test("wool-claim: claims a fresh linked worktree once", () => {
   assert.equal(claim(wt), "taken");
 });
 
-test("wool-claim: a branch with a slash and quotes", () => {
+test("wool claim: a branch with a slash and quotes", () => {
   const { root, main } = repo();
   const wt = join(root, "it's $x");
   git(main, "worktree", "add", "-q", "-b", "feat/it's-x", wt);
@@ -121,19 +121,19 @@ test("wool-claim: a branch with a slash and quotes", () => {
   assert.equal(out[3], "feat/it's-x");
 });
 
-test("wool-claim: the main checkout is not-linked", () => {
+test("wool claim: the main checkout is not-linked", () => {
   const { main } = repo();
   assert.equal(claim(main), "not-linked");
   assert.equal(claim(join(main)), "not-linked");
 });
 
-test("wool-claim: a plain folder or a missing one is not-linked", () => {
+test("wool claim: a plain folder or a missing one is not-linked", () => {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "plain ")));
   assert.equal(claim(dir), "not-linked");
   assert.equal(claim(join(dir, "nope")), "not-linked");
 });
 
-test("wool-claim: an old worktree is stale and not claimed", () => {
+test("wool claim: an old worktree is stale and not claimed", () => {
   const { root, main } = repo();
   const wt = join(root, "old");
   git(main, "worktree", "add", "-q", "-b", "old", wt);
@@ -144,7 +144,7 @@ test("wool-claim: an old worktree is stale and not claimed", () => {
   assert.ok(!existsSync(join(gitdir, "wool")));
 });
 
-test("wool-claim: a subfolder of a worktree claims the worktree", () => {
+test("wool claim: a subfolder of a worktree claims the worktree", () => {
   const { root, main } = repo();
   const wt = join(root, "sub");
   git(main, "worktree", "add", "-q", "-b", "sub", wt);
@@ -179,10 +179,10 @@ test("originalIsIdle: close the original tab only while its shell runs nothing",
   assert.equal(originalIsIdle(pane(), undefined), false);
 });
 
-// ---- wool-claim.sh rerun ----------------------------------------------
+// ---- wool claim rerun -------------------------------------------------
 
 const rerun = (folder) => {
-  const r = spawnSync("sh", [CLAIM, folder, "rerun"], { encoding: "utf8" });
+  const r = spawnSync("sh", [CLAIM, "claim", folder, "rerun"], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   return r.stdout.replace(/\n$/, "");
 };
@@ -197,13 +197,13 @@ function oldWorktree(name) {
   return { main, wt, gitdir };
 }
 
-test("wool-claim rerun: claims a stale worktree", () => {
+test("wool claim rerun: claims a stale worktree", () => {
   const { main, wt, gitdir } = oldWorktree("stale-one");
   assert.equal(rerun(wt), `claimed\t${gitdir}\t${main}\tstale-one\t${wt}`);
   assert.ok(statSync(join(gitdir, "wool")).isDirectory());
 });
 
-test("wool-claim rerun: clears old state and claims again", () => {
+test("wool claim rerun: clears old state and claims again", () => {
   const { wt, gitdir } = oldWorktree("again");
   mkdirSync(join(gitdir, "wool"));
   writeFileSync(join(gitdir, "wool", "status"), "failed x\n");
@@ -212,7 +212,7 @@ test("wool-claim rerun: clears old state and claims again", () => {
   assert.deepEqual(readdirSync(join(gitdir, "wool")), []);
 });
 
-test("wool-claim rerun: refuses while setup is running", () => {
+test("wool claim rerun: refuses while setup is running", () => {
   const { wt, gitdir } = oldWorktree("busy");
   mkdirSync(join(gitdir, "wool"));
   writeFileSync(join(gitdir, "wool", "status"), "running\n");
@@ -221,7 +221,7 @@ test("wool-claim rerun: refuses while setup is running", () => {
   assert.equal(readFileSync(join(gitdir, "wool", "config.yml"), "utf8"), "version: 1\n");
 });
 
-test("wool-claim rerun: the main checkout is still not-linked", () => {
+test("wool claim rerun: the main checkout is still not-linked", () => {
   const { main } = repo();
   assert.equal(rerun(main), "not-linked");
 });
@@ -233,7 +233,7 @@ test("closedSpaces: tracked spaces that are no longer listed", async () => {
   assert.deepEqual(closedSpaces(new Map(), [{ id: "s1" }]), []);
 });
 
-test("parseRecords reads wool-records.sh's lines", async () => {
+test("parseRecords reads `wool records` lines", async () => {
   const { parseRecords } = await import("../mods/wool/lib/detect.js");
   assert.deepEqual(parseRecords("/m/.git/wool/a\t/wt/a b\n/m/.git/wool/b\t/wt/b\n"), [
     { record: "/m/.git/wool/a", worktree: "/wt/a b" },

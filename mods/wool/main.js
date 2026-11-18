@@ -2,12 +2,13 @@
 //
 // Runs as an invisible kept window (mod.json): it draws nothing and watches
 // spaces(). When a new space shows up for a linked worktree made in the last
-// few minutes, it claims it (bin/wool-claim.sh), runs the repo's setup steps
+// few minutes, it claims it (`wool claim`), runs the repo's setup steps
 // in a terminal, and lays out plain-shell spaces, both from .herdr/wool.yml(.dist).
 // A config someone else could have written runs only once the person has
-// trusted its exact contents (bin/wool-trust.sh, asked in a `wool` tab).
+// trusted its exact contents (`wool trust`, asked in a `wool` tab).
 // When a space it set up closes and its worktree folder then disappears, it
-// runs the repo's teardown steps in the background (bin/wool-teardown.sh).
+// runs the repo's teardown steps in the background (`wool teardown`).
+// Everything outside Herdr goes through bin/wool, which dispatches to libexec/.
 // All decisions live in lib/ (tested with node --test); this file is glue.
 
 import { View, div } from "gpui-kit";
@@ -18,7 +19,7 @@ import { loadConfig } from "./lib/config.js";
 import {
   classifySpace, newSpaces, parseClaim, originalIsIdle, closedSpaces, parseRecords, FRESH_MINUTES, PENDING_LIMIT_MS,
 } from "./lib/detect.js";
-import { setupScript, teardownScript, teardownArgv } from "./lib/shell.js";
+import { setupScript, teardownScript, teardownArgv, woolArgv } from "./lib/shell.js";
 import { planLayout, planSetupOnly, pickAgent, inLoginShell } from "./lib/plan.js";
 import { parseCheck, readAnswer, requestNonce, promptTab, spaceForFolder } from "./lib/trust.js";
 
@@ -56,6 +57,7 @@ export default class Wool extends View {
     this.firstSeen = new Map(); // space id -> ms when first seen, while pending
     this.records = new Map(); // space id -> { record, worktree } for spaces with a teardown
     this.binDir = `${appHome()}/mods/wool/bin`;
+    this.cli = `${this.binDir}/wool`; // for commands shown to the person
     this.shell = null; // $SHELL, once asked
     this.asking = new Map(); // worktree -> wool tab's pane, while its prompt is open
   }
@@ -120,7 +122,7 @@ export default class Wool extends View {
   async handle(cx, space, kind, shellHint) {
     const folder = space.folder || panes().find((p) => p.tab === space.tabs[0]?.id)?.cwd;
     if (!folder) return;
-    const claimed = await exec("sh", [`${this.binDir}/wool-claim.sh`, folder, String(FRESH_MINUTES)]);
+    const claimed = await this.wool("claim", folder, String(FRESH_MINUTES));
     if (claimed.code !== 0) {
       notify({ title: "wool: couldn't check the worktree", body: (claimed.stderr || claimed.stdout).trim(), level: "error" });
       return;
@@ -130,7 +132,7 @@ export default class Wool extends View {
     await this.prepareClaimed(cx, space, kind, shellHint, wt);
   }
 
-  // After a claim (new space or wool-trust.sh run): prepare, and say how to retry.
+  // After a claim (new space or `wool rerun`): prepare, and say how to retry.
   async prepareClaimed(cx, space, kind, shellHint, wt) {
     try {
       await this.prepare(cx, space, kind, shellHint, wt);
@@ -138,7 +140,7 @@ export default class Wool extends View {
       // The claim is taken, so nothing will retry by itself: say how.
       notify({
         title: `wool: setting up ${wt.branch || tilde(wt.worktree)} stopped`,
-        body: `${e?.message ?? e}\nTo try again: sh "${this.binDir}/wool-trust.sh" run "${wt.worktree}"`,
+        body: `${e?.message ?? e}\nTo try again: "${this.cli}" rerun "${wt.worktree}"`,
         level: "error",
       });
     }
@@ -166,7 +168,7 @@ export default class Wool extends View {
     if (hasSetup) {
       const script = setupScript(cfg.steps, {
         HERDR_WORKTREE: wt.worktree, HERDR_MAIN_WORKTREE: wt.main, HERDR_BRANCH: wt.branch,
-      });
+      }, this.binDir);
       const w = await writeFile(`${wt.stateDir}/setup.sh`, script);
       if (w.code !== 0) throw new Error(`couldn't write ${wt.stateDir}/setup.sh: ${w.stderr.trim()}`);
     }
@@ -189,6 +191,12 @@ export default class Wool extends View {
     if (bg > 0) await this.watchBackground(cx, wt, bg);
   }
 
+  // Runs bin/wool <args> (exec's 30 s limit applies).
+  wool(...args) {
+    const [cmd, ...rest] = woolArgv(this.binDir, ...args);
+    return exec(cmd, rest);
+  }
+
   async loginShell() {
     if (!this.shell) {
       const r = await exec("sh", ["-c", 'printf %s "${SHELL:-/bin/sh}"']).catch(() => null);
@@ -202,7 +210,7 @@ export default class Wool extends View {
   async writeRecord(space, wt, steps) {
     const script = teardownScript(steps, {
       HERDR_WORKTREE: wt.worktree, HERDR_MAIN_WORKTREE: wt.main, HERDR_BRANCH: wt.branch,
-    });
+    }, this.binDir);
     const w = await exec("sh", [
       "-c",
       'mkdir -p "$1" && rm -f "$1/status" "$1/teardown.log" && printf %s "$2" > "$1/teardown.sh" && printf "%s\\n" "$3" > "$1/worktree"',
@@ -221,7 +229,7 @@ export default class Wool extends View {
     const local = all.filter((s) => (s.machine === null || s.machine === undefined) && s.folder);
     const seen = new Set();
     for (const space of local) {
-      const r = await exec("sh", [`${this.binDir}/wool-records.sh`, space.folder]);
+      const r = await this.wool("records", space.folder);
       for (const rec of parseRecords(r.stdout)) {
         const open = local.find((s) => s.folder === rec.worktree);
         if (open && spaces().some((s) => s.id === open.id)) this.records.set(open.id, rec);
@@ -233,7 +241,7 @@ export default class Wool extends View {
   }
 
   async checkRecord(rec) {
-    const r = await exec("sh", [`${this.binDir}/wool-teardown.sh`, "--check", rec.record]);
+    const r = await this.wool("teardown", "--check", rec.record);
     return r.code === 0 ? r.stdout.trim().split("\n").pop() : "error";
   }
 
@@ -268,7 +276,7 @@ export default class Wool extends View {
       if (status.startsWith("failed")) {
         notify({
           title: `wool: teardown of ${name} failed`,
-          body: `Step '${status.replace(/^failed\s*/, "")}' failed. Log: ${tilde(`${rec.record}/teardown.log`)}\nTo run it again: sh "${this.binDir}/wool-teardown.sh" "${rec.record}"`,
+          body: `Step '${status.replace(/^failed\s*/, "")}' failed. Log: ${tilde(`${rec.record}/teardown.log`)}\nTo run it again: "${this.cli}" teardown "${rec.record}"`,
           level: "error",
         });
         return;
@@ -276,7 +284,7 @@ export default class Wool extends View {
     }
   }
 
-  // `wool-trust.sh run <folder>` drops a request file; this takes them as they come
+  // `wool rerun <folder>` drops a request file; this takes them as they come
   // (and those left while wool wasn't running, at start).
   async watchRequests(cx) {
     try {
@@ -284,7 +292,7 @@ export default class Wool extends View {
       if (r.code !== 0) throw new Error(r.stderr.trim());
       const dir = r.stdout;
       for (;;) {
-        const t = await exec("sh", [`${this.binDir}/wool-trust.sh`, "_take"]);
+        const t = await this.wool("trust", "_take");
         for (const top of t.stdout.split("\n").filter(Boolean)) {
           cx.spawn(async (cx) => {
             try {
@@ -307,7 +315,7 @@ export default class Wool extends View {
         }
       }
     } catch (e) {
-      notify({ title: "wool: wool-trust.sh run won't work", body: String(e?.message ?? e), level: "error" });
+      notify({ title: "wool: wool rerun won't work", body: String(e?.message ?? e), level: "error" });
     }
   }
 
@@ -316,7 +324,7 @@ export default class Wool extends View {
   async rerun(cx, top) {
     const space = spaceForFolder(spaces(), top);
     if (!space) {
-      notify({ title: `wool: no open space for ${tilde(top)}`, body: "Open the worktree in Herdr, then run wool-trust.sh run again.", level: "warning" });
+      notify({ title: `wool: no open space for ${tilde(top)}`, body: `Open the worktree in Herdr, then run "${this.cli}" rerun again.`, level: "warning" });
       return;
     }
     const pending = this.asking.get(top);
@@ -324,7 +332,7 @@ export default class Wool extends View {
       notify({ title: "wool: already asking", body: `Answer in the wool tab of ${tilde(top)}.`, level: "info", action: { name: "pane.focus", args: { pane: pending } } });
       return;
     }
-    const claimed = await exec("sh", [`${this.binDir}/wool-claim.sh`, top, "rerun"]);
+    const claimed = await this.wool("claim", top, "rerun");
     if (claimed.code !== 0) {
       notify({ title: "wool: couldn't check the worktree", body: (claimed.stderr || claimed.stdout).trim(), level: "error" });
       return;
@@ -351,9 +359,9 @@ export default class Wool extends View {
     const w = await writeFile(`${wt.stateDir}/config.yml`, config.text);
     if (w.code !== 0) throw new Error(`couldn't write ${wt.stateDir}/config.yml: ${w.stderr.trim()}`);
     // Ties the prompt's answer to this question, not an older or newer one
-    // (wool-trust.sh run, or a second copy of wool, asking about the same worktree).
+    // (`wool rerun`, or a second copy of wool, asking about the same worktree).
     const nonce = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-    const r = await exec("sh", [`${this.binDir}/wool-trust.sh`, "check", wt.stateDir, wt.main, config.file, nonce]);
+    const r = await this.wool("trust", "check", wt.stateDir, wt.main, config.file, nonce);
     const c = r.code === 0 ? parseCheck(r.stdout) : null;
     if (!c) throw new Error(`couldn't check whether ${tilde(config.file)} is trusted: ${(r.stderr || r.stdout).trim()}`);
     if (c.verdict === "implicit" || c.verdict === "trusted") return true;
@@ -361,7 +369,7 @@ export default class Wool extends View {
     return this.askTrust(cx, space, kind, wt, config.file, nonce);
   }
 
-  // Adds the `wool` tab running `wool-trust.sh prompt` and waits for its answer.
+  // Adds the `wool` tab running `wool trust prompt` and waits for its answer.
   async askTrust(cx, space, kind, wt, file, nonce) {
     const name = wt.branch || tilde(wt.worktree);
     const before = focused();
@@ -398,7 +406,7 @@ export default class Wool extends View {
     for (;;) {
       answer = readAnswer(await readTextFile(`${wt.stateDir}/trust-answer`), nonce);
       if (answer) break;
-      // Asked again since (wool-trust.sh run): that question's flow takes over.
+      // Asked again since (`wool rerun`): that question's flow takes over.
       if (requestNonce(await readTextFile(`${wt.stateDir}/trust-request`)) !== nonce) {
         if (tabIdsOf(space.id).has(tab)) run("tab.close", { id: tab, confirmed: true });
         return false;
@@ -420,7 +428,7 @@ export default class Wool extends View {
       title: `wool: skipped ${name}`,
       body: answer === "decline"
         ? `You declined .herdr/${base(file)} for ${tilde(wt.main)}.`
-        : `No answer. To ask again: sh "${this.binDir}/wool-trust.sh" run "${wt.worktree}"`,
+        : `No answer. To ask again: "${this.cli}" rerun "${wt.worktree}"`,
       level: "info",
     });
     return false;
@@ -531,9 +539,9 @@ export default class Wool extends View {
     return pane;
   }
 
-  // The pane running wool-run.sh for this worktree, found through its terminal.
+  // The pane running `wool run` for this worktree, found through its terminal.
   setupPaneOf(wt) {
-    const t = terminals().find((x) => Array.isArray(x.argv) && x.argv.includes(`${this.binDir}/wool-run.sh`) && x.argv.includes(wt.stateDir));
+    const t = terminals().find((x) => Array.isArray(x.argv) && x.argv.includes(this.cli) && x.argv.includes("run") && x.argv.includes(wt.stateDir));
     return t ? panes().find((p) => p.terminal === t.address)?.pane ?? null : null;
   }
 

@@ -1,14 +1,14 @@
 #!/bin/sh
-# wool-trust.sh: wool's trust gate for a repo's .herdr/wool.yml(.dist).
+# wool's trust gate for a repo's .herdr/wool.yml(.dist). bin/wool runs it as:
 #
-#   wool-trust.sh list               every trusted or declined file
-#   wool-trust.sh forget <folder>    forget every decision for <folder>'s repo
-#   wool-trust.sh run <folder>       set up <folder>'s worktree again (asks first if needed)
-#   wool-trust.sh prompt <state dir> ask about a worktree's config (wool runs this)
+#   wool trust list               every trusted or declined file
+#   wool trust forget <folder>    forget every decision for <folder>'s repo
+#   wool rerun <folder>           set up <folder>'s worktree again (asks first if needed)
+#   wool trust prompt <state dir> ask about a worktree's config (wool runs this)
 #
-# wool itself runs `wool-trust.sh check` and `wool-trust.sh prompt`. There is
-# deliberately no `trust` subcommand: trusting a file takes an answer typed
-# into wool's prompt.
+# wool itself runs `wool trust check` and `wool trust prompt`. There is
+# deliberately no way to trust a file from here: trusting it takes an answer
+# typed into wool's prompt.
 #
 # The store is ${XDG_CONFIG_HOME:-$HOME/.config}/wool/trust.tsv, one line per
 # decision: <sha256> TAB <trusted|declined> TAB <repo> TAB <file> TAB <date>.
@@ -23,16 +23,16 @@ locked=
 
 usage() {
   cat >&2 <<'EOF'
-usage: wool-trust.sh list
-       wool-trust.sh forget <folder>
-       wool-trust.sh run <folder>
-       wool-trust.sh prompt <state dir>
+usage: wool trust list
+       wool trust forget <folder>
+       wool rerun <folder>
+       wool trust prompt <state dir>
 EOF
   exit 2
 }
 
 die() {
-  printf 'wool-trust.sh %s\n' "$*" >&2
+  printf 'wool %s\n' "$*" >&2
   exit 1
 }
 
@@ -57,11 +57,11 @@ main_of() {
 }
 
 lock() {
-  mkdir -p "$dir" || die "store: can't create $dir"
+  mkdir -p "$dir" || die "trust store: can't create $dir"
   n=0
   until mkdir "$lockdir" 2>/dev/null; do
     n=$((n + 1))
-    [ "$n" -ge 50 ] && die "store: $lockdir is held by something else (remove it if nothing is running)"
+    [ "$n" -ge 50 ] && die "trust store: $lockdir is held by something else (remove it if nothing is running)"
     sleep 0.1
   done
   locked=1
@@ -96,7 +96,7 @@ rewrite() {
   {
     if [ -f "$store" ]; then awk -F '\t' "$1" "$store" || exit 1; fi
     if [ -n "$2" ]; then printf '%s\n' "$2"; fi
-  } > "$tmpf" && mv -f "$tmpf" "$store" || { rm -f "$tmpf"; die "store: can't write $store"; }
+  } > "$tmpf" && mv -f "$tmpf" "$store" || { rm -f "$tmpf"; die "trust store: can't write $store"; }
 }
 
 # store_put <sha> <trusted|declined> <repo> <file>: one decision per repo + sha.
@@ -116,11 +116,11 @@ store_get() {
 cmd_check() {
   [ $# -eq 4 ] || usage
   state=$1 repo=$2 file=$3 ask=$4
-  [ -f "$state/config.yml" ] || die "check: no $state/config.yml"
+  [ -f "$state/config.yml" ] || die "trust check: no $state/config.yml"
   sum=$(checksum "$state/config.yml")
-  [ -n "$sum" ] || die "check: couldn't checksum $state/config.yml"
+  [ -n "$sum" ] || die "trust check: couldn't checksum $state/config.yml"
   # <nonce>: wool's id for this question; the prompt's answer carries it.
-  printf '%s\t%s\t%s\t%s\n' "$repo" "$file" "$sum" "$ask" > "$state/trust-request" || die "check: can't write $state/trust-request"
+  printf '%s\t%s\t%s\t%s\n' "$repo" "$file" "$sum" "$ask" > "$state/trust-request" || die "trust check: can't write $state/trust-request"
   verdict=ask
   case ${file##*/} in
     wool.yml)
@@ -148,7 +148,7 @@ cmd_list() {
 
 cmd_forget() {
   [ $# -eq 1 ] || usage
-  repo=$(main_of "$1") && [ -n "$repo" ] || die "forget: $1 isn't in a git repository"
+  repo=$(main_of "$1") && [ -n "$repo" ] || die "trust forget: $1 isn't in a git repository"
   count=0
   if [ -f "$store" ]; then
     lock
@@ -177,7 +177,7 @@ cmd_prompt() {
   [ $# -eq 1 ] || usage
   state=$1
   if [ ! -t 0 ]; then
-    echo "wool-trust.sh prompt: needs a terminal" >&2
+    echo "wool trust prompt: needs a terminal" >&2
     exit 1
   fi
   # Closed, hung up, Ctrl-C'd or failed without an answer: finish() answers
@@ -202,7 +202,7 @@ cmd_prompt() {
   # What's shown must be what's checksummed (and what wool runs).
   [ "$(checksum "$state/config.yml")" = "$sum" ] || give_up "wool: $state/config.yml changed since wool read it. Nothing will run."
 
-  bin=$(cd "$(dirname "$0")" && pwd)
+  cli=${WOOL_CLI:-wool}
   worktree=$(dirname "$(cat "$state/../gitdir" 2>/dev/null)" 2>/dev/null)
   [ -n "$worktree" ] && [ "$worktree" != . ] || worktree="<worktree>"
 
@@ -228,7 +228,7 @@ cmd_prompt() {
     break
   done
 
-  # wool asked again (wool-trust.sh run) while this prompt stayed open: this
+  # wool asked again (wool rerun) while this prompt stayed open: this
   # answer is about a question wool no longer waits for.
   if [ "$(cat "$state/trust-request" 2>/dev/null)" != "$request" ]; then
     printf '\nThis question is out of date (wool asked again in another tab). Nothing was saved.\n'
@@ -245,31 +245,31 @@ cmd_prompt() {
 
   if [ "$choice" = decline ]; then
     printf '\nDeclined. wool won'"'"'t ask about this file again.\n'
-    printf 'To undo:\n  sh "%s/wool-trust.sh" forget "%s"\n  sh "%s/wool-trust.sh" run "%s"\n' "$bin" "$repo" "$bin" "$worktree"
+    printf 'To undo:\n  "%s" trust forget "%s"\n  "%s" rerun "%s"\n' "$cli" "$repo" "$cli" "$worktree"
   else
     printf '\nwool is setting up %s.\n' "$worktree"
-    printf 'If nothing happens (wool restarted while this was open), run:\n  sh "%s/wool-trust.sh" run "%s"\n' "$bin" "$worktree"
+    printf 'If nothing happens (wool restarted while this was open), run:\n  "%s" rerun "%s"\n' "$cli" "$worktree"
   fi
 }
 
-# wool-trust.sh run <folder>: asks the running wool to set up a worktree again.
-cmd_run() {
+# wool rerun <folder>: asks the running wool to set up a worktree again.
+cmd_rerun() {
   [ $# -eq 1 ] || usage
   dirs=$(git -C "$1" rev-parse --path-format=absolute --git-dir --git-common-dir 2>/dev/null) || dirs=
   gitdir=$(printf '%s\n' "$dirs" | sed -n 1p)
   common=$(printf '%s\n' "$dirs" | sed -n 2p)
   if [ -z "$gitdir" ] || [ -z "$common" ] || [ "$gitdir" = "$common" ]; then
-    die "run: $1 isn't a linked git worktree"
+    die "rerun: $1 isn't a linked git worktree"
   fi
-  top=$(git -C "$1" rev-parse --show-toplevel) || die "run: can't find the top of $1"
-  mkdir -p "$requests" || die "run: can't create $requests"
+  top=$(git -C "$1" rev-parse --show-toplevel) || die "rerun: can't find the top of $1"
+  mkdir -p "$requests" || die "rerun: can't create $requests"
   name="$(date +%s)-$$"
   printf '%s\n' "$top" > "$requests/.$name.tmp" && mv -f "$requests/.$name.tmp" "$requests/$name" \
-    || { rm -f "$requests/.$name.tmp"; die "run: can't write to $requests"; }
+    || { rm -f "$requests/.$name.tmp"; die "rerun: can't write to $requests"; }
   printf 'Asked wool to set up %s.\n' "$top"
 }
 
-# wool-trust.sh _take (wool runs this): prints each pending request's folder and
+# wool trust _take (wool runs this): prints each pending request's folder and
 # removes it. A request is taken with mv, so two copies of wool never both
 # take one.
 cmd_take() {
@@ -290,7 +290,7 @@ case $sub in
   check) cmd_check "$@" ;;
   list) cmd_list "$@" ;;
   forget) cmd_forget "$@" ;;
-  run) cmd_run "$@" ;;
+  rerun) cmd_rerun "$@" ;;
   prompt) cmd_prompt "$@" ;;
   _take) cmd_take ;;
   *) usage ;;

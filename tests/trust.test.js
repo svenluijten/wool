@@ -8,7 +8,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseCheck, readAnswer, requestNonce, promptTab, spaceForFolder } from "../mods/wool/lib/trust.js";
 
-const WOOL = join(dirname(fileURLToPath(import.meta.url)), "..", "mods", "wool", "bin", "wool-trust.sh");
+const WOOL = join(dirname(fileURLToPath(import.meta.url)), "..", "mods", "wool", "bin", "wool");
 const tmp = (name = "wool trust ") => realpathSync(mkdtempSync(join(tmpdir(), name)));
 const CONFIG = "version: 1\nsetup:\n  - run: echo hi\n";
 const NONCE = "n1"; // what main.js passes to check, once per question
@@ -30,7 +30,7 @@ function fixture({ text = CONFIG, file = "wool.yml.dist", ignore = false, xdg = 
   git(main, "worktree", "add", "-q", "-b", "b", wt);
   const path = join(main, ".herdr", file);
   writeFileSync(path, text);
-  // The state dir sits in the worktree's git dir, as wool-claim.sh makes it.
+  // The state dir sits in the worktree's git dir, as `wool claim` makes it.
   const state = join(git(wt, "rev-parse", "--path-format=absolute", "--git-dir"), "wool");
   mkdirSync(state);
   writeFileSync(join(state, "config.yml"), text);
@@ -45,12 +45,12 @@ function wool(fx, args, opts = {}) {
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 
 function check(fx) {
-  const r = wool(fx, ["check", fx.state, fx.main, fx.path, NONCE]);
+  const r = wool(fx, ["trust", "check", fx.state, fx.main, fx.path, NONCE]);
   assert.equal(r.status, 0, r.stderr);
   return r.stdout;
 }
 
-// A decision as the prompt stores it (wool-trust.sh has no command that writes one).
+// A decision as the prompt stores it (wool has no command that writes one).
 function put(fx, s, decision, repo = fx.main, file = fx.path) {
   mkdirSync(dirname(fx.store), { recursive: true });
   const old = existsSync(fx.store) ? readFileSync(fx.store, "utf8") : "";
@@ -108,7 +108,7 @@ test("check: a changed file (new sha) asks again", () => {
 
 test("list: empty store says so", () => {
   const fx = fixture();
-  const r = wool(fx, ["list"]);
+  const r = wool(fx, ["trust", "list"]);
   assert.equal(r.status, 0);
   assert.equal(r.stdout, "No trusted or declined files.\n");
 });
@@ -117,7 +117,7 @@ test("list: shows decision, short sha, repo, file", () => {
   const fx = fixture();
   put(fx, sha(CONFIG), "trusted");
   put(fx, sha("x"), "declined");
-  const out = wool(fx, ["list"]).stdout.split("\n").filter(Boolean);
+  const out = wool(fx, ["trust", "list"]).stdout.split("\n").filter(Boolean);
   assert.equal(out.length, 2);
   assert.match(out[0], new RegExp(`^trusted  ${sha(CONFIG).slice(0, 12)}  ${fx.main}  ${fx.path}  \\d{4}-`));
   assert.match(out[1], new RegExp(`^declined  ${sha("x").slice(0, 12)}  `));
@@ -128,7 +128,7 @@ test("forget: removes every entry for the repo, from a worktree path too", () =>
   put(fx, sha(CONFIG), "trusted");
   put(fx, sha("x"), "declined");
   put(fx, sha(CONFIG), "trusted", "/other/repo");
-  const r = wool(fx, ["forget", fx.wt]);
+  const r = wool(fx, ["trust", "forget", fx.wt]);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout, `Forgot 2 entries for ${fx.main}.\n`);
   const lines = storeLines(fx);
@@ -139,18 +139,18 @@ test("forget: removes every entry for the repo, from a worktree path too", () =>
 test("forget: one entry, from the main checkout", () => {
   const fx = fixture();
   put(fx, sha(CONFIG), "trusted");
-  assert.equal(wool(fx, ["forget", fx.main]).stdout, `Forgot 1 entry for ${fx.main}.\n`);
-  assert.equal(wool(fx, ["forget", fx.main]).stdout, `Forgot 0 entries for ${fx.main}.\n`);
+  assert.equal(wool(fx, ["trust", "forget", fx.main]).stdout, `Forgot 1 entry for ${fx.main}.\n`);
+  assert.equal(wool(fx, ["trust", "forget", fx.main]).stdout, `Forgot 0 entries for ${fx.main}.\n`);
 });
 
 test("forget: a folder that isn't a repo is an error", () => {
   const fx = fixture();
-  const r = wool(fx, ["forget", tmp("plain ")]);
+  const r = wool(fx, ["trust", "forget", tmp("plain ")]);
   assert.equal(r.status, 1);
   assert.match(r.stderr, /git/);
 });
 
-test("wool-trust.sh: no trust subcommand", () => {
+test("wool: no command trusts a file", () => {
   const fx = fixture();
   for (const args of [["trust", fx.wt], [], ["nope"], ["_put", sha(CONFIG), "trusted", fx.main, fx.path]]) {
     const r = wool(fx, args);
@@ -172,7 +172,7 @@ test("parseCheck", () => {
   assert.equal(parseCheck(null), null);
 });
 
-// ---- wool-trust.sh prompt ----------------------------------------------------
+// ---- wool trust prompt -------------------------------------------------------
 
 const QUESTION = "[d]ecline  trust [o]nce  [t]rust project";
 const BSD_SCRIPT = process.platform === "darwin" || process.platform === "freebsd";
@@ -194,7 +194,7 @@ async function until(fn, ms = 5000) {
 async function prompt(fx, answers, then = null) {
   writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha(readFileSync(join(fx.state, "config.yml"), "utf8"))}\t${NONCE}\n`);
   // script(1) can't take a socket as stdin (what Node's pipes are): cat bridges.
-  const c = spawn("sh", ["-c", 'cat | script -q /dev/null sh "$0" prompt "$1"', WOOL, fx.state], {
+  const c = spawn("sh", ["-c", 'cat | script -q /dev/null sh "$0" trust prompt "$1"', WOOL, fx.state], {
     env: { ...process.env, XDG_CONFIG_HOME: fx.xdg }, stdio: ["pipe", "pipe", "pipe"], detached: true,
   });
   let out = "";
@@ -215,7 +215,7 @@ async function prompt(fx, answers, then = null) {
     if (then === "hup-twice") {
       // Herdr closing a tab sends HUP more than once, the second while the
       // first one's exit handler is still running.
-      const pid = execFileSync("pgrep", ["-f", `wool-trust.sh prompt ${fx.state}$`], { encoding: "utf8" }).trim().split("\n").pop();
+      const pid = execFileSync("pgrep", ["-f", `trust.sh prompt ${fx.state}$`], { encoding: "utf8" }).trim().split("\n").pop();
       for (let i = 0; i < 40; i++) {
         try { process.kill(Number(pid), "SIGHUP"); } catch {}
         await new Promise((r) => setTimeout(r, 1));
@@ -254,7 +254,7 @@ ptyTest("prompt: t trusts the project", async () => {
   const lines = storeLines(fx);
   assert.equal(lines.length, 1);
   assert.deepEqual(lines[0].split("\t").slice(0, 4), [sha(CONFIG), "trusted", fx.main, fx.path]);
-  assert.match(out, /wool-trust\.sh" run/);
+  assert.match(out, /wool" rerun/);
   assert.ok(out.includes(fx.wt), out);
 });
 
@@ -264,7 +264,7 @@ ptyTest("prompt: o trusts once", async () => {
   assert.equal(code, 0, out);
   assert.equal(answer(fx), "once\tn1\n");
   assert.deepEqual(storeLines(fx), []);
-  assert.match(out, /wool-trust\.sh" run/);
+  assert.match(out, /wool" rerun/);
 });
 
 ptyTest("prompt: d declines", async () => {
@@ -273,8 +273,8 @@ ptyTest("prompt: d declines", async () => {
   assert.equal(code, 0, out);
   assert.equal(answer(fx), "decline\tn1\n");
   assert.deepEqual(storeLines(fx)[0].split("\t").slice(0, 2), [sha(CONFIG), "declined"]);
-  assert.match(out, /wool-trust\.sh" forget/);
-  assert.match(out, /wool-trust\.sh" run/);
+  assert.match(out, /wool" trust forget/);
+  assert.match(out, /wool" rerun/);
 });
 
 ptyTest("prompt: anything else asks again", async () => {
@@ -323,7 +323,7 @@ ptyTest("prompt: a config.yml that no longer matches the checked sha is refused"
   const fx = fixture();
   writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha(CONFIG)}\t${NONCE}\n`);
   writeFileSync(join(fx.state, "config.yml"), CONFIG + "# edited after the check\n");
-  const c = spawnSync("sh", ["-c", 'cat | script -q /dev/null sh "$0" prompt "$1"', WOOL, fx.state], {
+  const c = spawnSync("sh", ["-c", 'cat | script -q /dev/null sh "$0" trust prompt "$1"', WOOL, fx.state], {
     encoding: "utf8", env: { ...process.env, XDG_CONFIG_HOME: fx.xdg }, input: "",
   });
   assert.notEqual(c.status, 0);
@@ -335,7 +335,7 @@ ptyTest("prompt: a config.yml that no longer matches the checked sha is refused"
 test("prompt: refuses without a terminal", () => {
   const fx = fixture();
   writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha(CONFIG)}\t${NONCE}\n`);
-  const r = wool(fx, ["prompt", fx.state], { input: "t\n" });
+  const r = wool(fx, ["trust", "prompt", fx.state], { input: "t\n" });
   assert.equal(r.status, 1);
   assert.match(r.stderr, /needs a terminal/);
   assert.equal(answer(fx), null);
@@ -364,11 +364,11 @@ test("requestNonce", () => {
 
 test("promptTab", () => {
   assert.deepEqual(promptTab("/m/bin", "/r/.git/worktrees/b/wool"), {
-    name: "wool", argv: ["sh", "/m/bin/wool-trust.sh", "prompt", "/r/.git/worktrees/b/wool"],
+    name: "wool", argv: ["sh", "/m/bin/wool", "trust", "prompt", "/r/.git/worktrees/b/wool"],
   });
 });
 
-// ---- wool-trust.sh run -------------------------------------------------------
+// ---- wool rerun ----------------------------------------------------------------
 
 const requestsOf = (fx) => join(fx.xdg, "wool", "requests");
 const requestFiles = (fx) => (existsSync(requestsOf(fx)) ? readdirSync(requestsOf(fx)) : []);
@@ -376,7 +376,7 @@ const requestFiles = (fx) => (existsSync(requestsOf(fx)) ? readdirSync(requestsO
 test("run: writes a request with the worktree top", () => {
   const fx = fixture();
   mkdirSync(join(fx.wt, "src"));
-  const r = wool(fx, ["run", join(fx.wt, "src")]);
+  const r = wool(fx, ["rerun", join(fx.wt, "src")]);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout, `Asked wool to set up ${fx.wt}.\n`);
   const files = requestFiles(fx);
@@ -387,7 +387,7 @@ test("run: writes a request with the worktree top", () => {
 
 test("run: refuses the main checkout", () => {
   const fx = fixture();
-  const r = wool(fx, ["run", fx.main]);
+  const r = wool(fx, ["rerun", fx.main]);
   assert.equal(r.status, 1);
   assert.match(r.stderr, /isn't a linked git worktree/);
   assert.deepEqual(requestFiles(fx), []);
@@ -395,7 +395,7 @@ test("run: refuses the main checkout", () => {
 
 test("run: refuses a non-repo folder", () => {
   const fx = fixture();
-  const r = wool(fx, ["run", tmp("plain ")]);
+  const r = wool(fx, ["rerun", tmp("plain ")]);
   assert.equal(r.status, 1);
   assert.match(r.stderr, /isn't a linked git worktree/);
   assert.deepEqual(requestFiles(fx), []);
@@ -403,21 +403,21 @@ test("run: refuses a non-repo folder", () => {
 
 test("_take: prints each request once and removes it", () => {
   const fx = fixture();
-  assert.equal(wool(fx, ["_take"]).stdout, "");
-  wool(fx, ["run", fx.wt]);
-  wool(fx, ["run", fx.wt]);
-  const r = wool(fx, ["_take"]);
+  assert.equal(wool(fx, ["trust", "_take"]).stdout, "");
+  wool(fx, ["rerun", fx.wt]);
+  wool(fx, ["rerun", fx.wt]);
+  const r = wool(fx, ["trust", "_take"]);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout, `${fx.wt}\n${fx.wt}\n`);
   assert.deepEqual(requestFiles(fx), []);
-  assert.equal(wool(fx, ["_take"]).stdout, "");
+  assert.equal(wool(fx, ["trust", "_take"]).stdout, "");
 });
 
 ptyTest("prompt: an answer to an out-of-date question is not used", async () => {
-  // wool asked again (wool-trust.sh run) while this old prompt stayed open.
+  // wool asked again (wool rerun) while this old prompt stayed open.
   const fx = fixture();
   writeFileSync(join(fx.state, "trust-request"), `${fx.main}\t${fx.path}\t${sha(CONFIG)}\t${NONCE}\n`);
-  const c = spawn("sh", ["-c", 'cat | script -q /dev/null sh "$0" prompt "$1"', WOOL, fx.state], {
+  const c = spawn("sh", ["-c", 'cat | script -q /dev/null sh "$0" trust prompt "$1"', WOOL, fx.state], {
     env: { ...process.env, XDG_CONFIG_HOME: fx.xdg }, stdio: ["pipe", "pipe", "pipe"], detached: true,
   });
   let out = "";
@@ -485,7 +485,7 @@ ptyTest("store: junk lines are kept and ignored", async () => {
   const junk = `\ngarbage\n${sha(CONFIG)}\ttrusted\t${fx.main}\n${sha(CONFIG)}\tmaybe\t${fx.main}\t${fx.path}\t2026-01-01T00:00:00Z\n`;
   writeFileSync(fx.store, junk);
   assert.equal(check(fx), `ask\t${sha(CONFIG)}\n`);
-  const l = wool(fx, ["list"]);
+  const l = wool(fx, ["trust", "list"]);
   assert.equal(l.status, 0, l.stderr);
   assert.equal(l.stdout, "No trusted or declined files.\n");
   await prompt(fx, ["d"]);

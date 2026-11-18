@@ -1,5 +1,5 @@
 // Builds the setup script and the argv arrays wool hands to Herdr. The long
-// work happens in a terminal through bin/*.sh, never in exec (30 s limit).
+// work happens in a terminal through bin/wool, never in exec (30 s limit).
 
 import { branchSlug } from "./names.js";
 
@@ -14,18 +14,19 @@ export function label(step) {
   return lines.length > 1 ? `${lines[0]} …` : (lines[0] ?? "");
 }
 
-// env: HERDR_WORKTREE, HERDR_MAIN_WORKTREE, HERDR_BRANCH.
-export function setupScript(steps, env) {
-  return stepsScript(steps, env, "HERDR_WORKTREE");
+// env: HERDR_WORKTREE, HERDR_MAIN_WORKTREE, HERDR_BRANCH. binDir: the folder
+// with bin/wool, put first on PATH so steps can run `wool port`; or null.
+export function setupScript(steps, env, binDir = null) {
+  return stepsScript(steps, env, binDir, "HERDR_WORKTREE");
 }
 
-export function teardownScript(steps, env) {
-  return stepsScript(steps, env, "HERDR_MAIN_WORKTREE");
+export function teardownScript(steps, env, binDir = null) {
+  return stepsScript(steps, env, binDir, "HERDR_MAIN_WORKTREE");
 }
 
 // Everything is written as values, not worked out when the script runs, so a
 // teardown sees exactly what its setup saw.
-function stepsScript(steps, env, dirVar) {
+function stepsScript(steps, env, binDir, dirVar) {
   const q = shellQuote;
   const lines = [
     "#!/bin/sh",
@@ -36,6 +37,7 @@ function stepsScript(steps, env, dirVar) {
     `HERDR_BRANCH=${q(env.HERDR_BRANCH)}`,
     `HERDR_BRANCH_SLUG=${q(branchSlug(env.HERDR_BRANCH))}`,
     "export HERDR_WORKTREE HERDR_MAIN_WORKTREE HERDR_BRANCH HERDR_BRANCH_SLUG",
+    ...(binDir ? [`PATH=${q(binDir)}:$PATH`, "export PATH"] : []),
     `cd "$${dirVar}" || { echo "wool: can't enter $${dirVar}"; exit 1; }`,
     "wool_step() {",
     "  wool_label=$1; shift",
@@ -60,26 +62,31 @@ function stepsScript(steps, env, dirVar) {
 
 const viaSh = (command) => ["sh", "-c", command];
 
+// bin/wool <command> [args], through sh so it needn't be executable.
+export function woolArgv(binDir, ...args) {
+  return ["sh", `${binDir}/wool`, ...args];
+}
+
 export function runArgv(binDir, stateDir, command) {
-  const argv = ["sh", `${binDir}/wool-run.sh`, stateDir];
+  const argv = woolArgv(binDir, "run", stateDir);
   return command === null || command === undefined ? argv : [...argv, "--", ...viaSh(command)];
 }
 
 export function teardownArgv(binDir, record) {
-  return ["sh", `${binDir}/wool-teardown.sh`, record];
+  return woolArgv(binDir, "teardown", record);
 }
 
 // No terminal: output goes to <stateDir>/setup.log and the steps get no stdin.
 export function headlessRunArgv(binDir, stateDir) {
-  return ["sh", "-c", 'exec sh "$1" "$2" > "$2/setup.log" 2>&1 < /dev/null', "sh", `${binDir}/wool-run.sh`, stateDir];
+  return ["sh", "-c", 'exec sh "$1" run "$2" > "$2/setup.log" 2>&1 < /dev/null', "sh", `${binDir}/wool`, stateDir];
 }
 
 export function waitArgv(binDir, stateDir, command) {
-  return ["sh", `${binDir}/wool-wait.sh`, stateDir, "--", ...viaSh(command)];
+  return woolArgv(binDir, "wait", stateDir, "--", ...viaSh(command));
 }
 
 export function bgArgv(binDir, stateDir, n, wait, command) {
-  return ["sh", `${binDir}/wool-bg.sh`, stateDir, String(n), ...(wait ? ["--wait"] : []), "--", ...viaSh(command)];
+  return woolArgv(binDir, "bg", stateDir, String(n), ...(wait ? ["--wait"] : []), "--", ...viaSh(command));
 }
 
 export function withEnv(argv, env) {

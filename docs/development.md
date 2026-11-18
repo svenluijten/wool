@@ -53,15 +53,18 @@ All files are under `mods/wool/`.
   - `shell.js`: generates the setup and teardown scripts.
   - `names.js`: works out `HERDR_BRANCH_SLUG` from the branch.
   - `trust.js`: reads the output of the trust check.
-- `bin/` holds the POSIX `sh` scripts that run in terminals or in the
-  background:
-  - `wool-claim.sh`: marks a worktree as handled by wool.
-  - `wool-run.sh`: runs the setup script and records the result.
-  - `wool-wait.sh`: waits for setup to finish before it runs a command.
-  - `wool-bg.sh`: runs a background command.
-  - `wool-trust.sh`: wool's trust gate for config files.
-  - `wool-records.sh`: lists the teardown records of a repo.
-  - `wool-teardown.sh`: runs teardown steps once the worktree is gone.
+- `bin/wool` is the command-line side: one POSIX `sh` script that wool,
+  setup and teardown steps, and people run. It finds and runs a command from
+  `libexec/`. It must stay executable, since steps run it from `PATH`.
+- `libexec/` holds the commands, one POSIX `sh` script each:
+  - `claim.sh` (`wool claim`): marks a worktree as handled by wool.
+  - `run.sh` (`wool run`): runs the setup script and records the result.
+  - `wait.sh` (`wool wait`): waits for setup to finish before it runs a command.
+  - `bg.sh` (`wool bg`): runs a background command.
+  - `trust.sh` (`wool trust …`, `wool rerun`): wool's trust gate for config files.
+  - `records.sh` (`wool records`): lists the teardown records of a repo.
+  - `teardown.sh` (`wool teardown`): runs teardown steps once the worktree is gone.
+  - `port.sh` (`wool port`): a port for the worktree's branch.
 - `mod.json` tells Herdr to run wool as an invisible window.
 
 Tests are in `tests/`, one file per `lib/` module plus `main.test.js` and

@@ -1,0 +1,61 @@
+#!/bin/sh
+# wool: the command-line side of the wool mod. wool (main.js) runs it for
+# everything it does outside Herdr, setup and teardown steps get it on PATH,
+# and people can run the commands in `wool help`.
+#
+# Each command lives in ../libexec/<name>.sh; this file only finds and runs it.
+set -u
+
+# Where this file really is, through any symlinks (one on PATH, or a linked
+# mod folder), so ../libexec is found.
+self=$0
+while [ -L "$self" ]; do
+  link=$(readlink "$self")
+  case $link in
+    /*) self=$link ;;
+    *) self=$(dirname "$self")/$link ;;
+  esac
+done
+bin=$(cd "$(dirname "$self")" && pwd -P)
+libexec=$(dirname "$bin")/libexec
+# For the commands to print, e.g. "To undo: <WOOL_CLI> trust forget ...".
+WOOL_CLI="$bin/wool"
+export WOOL_CLI
+
+usage() {
+  cat <<'USAGE'
+usage: wool <command> [args]
+
+In setup and teardown steps:
+  port [name]               a port for this worktree's branch (10000-19999)
+
+In a terminal:
+  rerun <worktree>          set up <worktree> again (asks to trust its config if needed)
+  teardown <record>         run a failed teardown again (the notification has the record)
+  trust list                every config file you trusted or declined
+  trust forget <folder>     forget every decision for <folder>'s repo
+  help                      this list
+
+wool itself also runs: claim, run, wait, bg, records, trust check, trust prompt.
+USAGE
+}
+
+[ $# -ge 1 ] || { usage >&2; exit 2; }
+cmd=$1
+shift
+case $cmd in
+  port | claim | run | wait | bg | records | teardown) exec sh "$libexec/$cmd.sh" "$@" ;;
+  rerun) exec sh "$libexec/trust.sh" rerun "$@" ;;
+  trust)
+    case ${1:-} in
+      list | forget | check | prompt | _take) exec sh "$libexec/trust.sh" "$@" ;;
+    esac
+    ;;
+  help | -h | --help)
+    usage
+    exit 0
+    ;;
+esac
+printf 'wool: unknown command: %s\n\n' "$cmd${1:+ $1}" >&2
+usage >&2
+exit 2

@@ -36,10 +36,10 @@ function setup({ onTab } = {}) {
   return { wool, cx, space, wt, config, state, root };
 }
 
-// Answers the prompt the way wool-trust.sh prompt would, once wool's tab exists.
+// Answers the prompt the way `wool trust prompt` would, once wool's tab exists.
 const answering = (word) => (id, args) => {
-  assert.deepEqual(args.argv.slice(1), [`${globalThis.herdr.appHome}/mods/wool/bin/wool-trust.sh`, "prompt", args.argv[3]]);
-  const state = args.argv[3];
+  assert.deepEqual(args.argv.slice(1), [`${globalThis.herdr.appHome}/mods/wool/bin/wool`, "trust", "prompt", args.argv[4]]);
+  const state = args.argv[4];
   const nonce = readFileSync(join(state, "trust-request"), "utf8").trim().split("\t")[3];
   setTimeout(() => writeFileSync(join(state, "trust-answer"), `${word}\t${nonce}\n`), 30);
 };
@@ -69,13 +69,13 @@ test("gate: decline runs nothing and says so", async () => {
 test("gate: no answer runs nothing and gives the run command", async () => {
   const t = setup({ onTab: answering("none") });
   assert.equal(await t.wool.gate(t.cx, t.space, "plain-shell", t.wt, t.config), false);
-  assert.match(globalThis.herdr.notes[0].body, /wool-trust\.sh" run/);
+  assert.match(globalThis.herdr.notes[0].body, /wool" rerun/);
 });
 
 test("gate: an answer to another question is ignored; a newer question takes over", async () => {
   const t = setup({
     onTab: (id, args) => {
-      const state = args.argv[3];
+      const state = args.argv[4];
       writeFileSync(join(state, "trust-answer"), "trust\tsomeone-else\n");
       setTimeout(() => writeFileSync(join(state, "trust-request"), readFileSync(join(state, "trust-request"), "utf8").replace(/\t[^\t]*\n$/, "\tnewer\n")), 60);
     },
@@ -172,7 +172,7 @@ test("watchRequests cancels each folder watch it stops waiting on", async () => 
   assert.ok(watches.every((w) => w.path.endsWith("/wool/requests")));
 });
 
-test("teardown: runs through the login shell, with the branch slug", async () => {
+test("teardown: runs through the login shell, with the branch slug and wool on PATH", async () => {
   const t = setup();
   // A stand-in for the person's shell: marks the environment, then runs argv.
   const bin = join(t.root, "bin");
@@ -184,12 +184,13 @@ test("teardown: runs through the login shell, with the branch slug", async () =>
   writeFileSync(join(t.wt.main, ".git", "HEAD"), "ref: refs/heads/main\n");
   const wt = { ...t.wt, branch: "Feat/Ports", recordDir: join(t.wt.main, ".git", "wool", "wt") };
   await t.wool.writeRecord(t.space, wt, [
-    { name: "record", run: 'printf "%s %s" "$FROM_LOGIN" "$HERDR_BRANCH_SLUG" > torn.txt', env: {} },
+    { name: "record", run: 'printf "%s %s %s" "$FROM_LOGIN" "$HERDR_BRANCH_SLUG" "$(wool port db)" > torn.txt', env: {} },
   ]);
   await t.wool.runTeardown(t.cx, t.wool.records.get(t.space.id));
-  const [login, slug] = readFileSync(join(t.wt.main, "torn.txt"), "utf8").split(" ");
+  const [login, slug, port] = readFileSync(join(t.wt.main, "torn.txt"), "utf8").split(" ");
   assert.equal(login, "yes");
   assert.match(slug, /^feat-ports-[0-9a-f]{6}$/);
+  assert.ok(Number(port) >= 10000 && Number(port) <= 19999, port);
   assert.ok(!existsSync(wt.recordDir), "the record is deleted after teardown");
   assert.equal(globalThis.herdr.notes.at(-1).level, "success");
 });

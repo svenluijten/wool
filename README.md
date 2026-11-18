@@ -41,6 +41,18 @@ with an option for personal overrides.
    `wool` runs as an invisible window. Herdr keeps it and reopens it every time the app
    starts, so there is no layout to edit and the shipped `main` layout stays as it is.
 
+3. Optional: put the `wool` command on your `PATH`, for
+   [running setup again](docs/troubleshooting.md#running-setup-again) and
+   [managing trust](docs/trust.md#managing-decisions):
+
+   ```sh
+   ln -s ~/.config/herdr-app/mods/wool/bin/wool ~/.local/bin/wool
+   wool help
+   ```
+
+   Without it, use the full path, `~/.config/herdr-app/mods/wool/bin/wool`.
+   Setup and teardown steps always have `wool` on their `PATH`.
+
 Good to know:
 
 - **Per layout.** Herdr keeps windows per layout. If you switch to another

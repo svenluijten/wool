@@ -118,6 +118,24 @@ commands don't get them.
 Setup and teardown steps of one worktree see the same values: wool writes them
 down when it sets up the worktree.
 
+## Ports
+
+Setup and teardown steps have the `wool` command on their `PATH`.
+`wool port [name]` prints a port from 10000 to 19999, picked from the branch
+(and `name`, if given), so several worktrees can run their servers side by
+side. The same branch and name always give the same port. Give each service
+its own name:
+
+```yaml
+setup:
+  - run: |
+      echo "APP_PORT=$(wool port)" >> .env
+      echo "VITE_PORT=$(wool port vite)" >> .env
+```
+
+Ports are picked by hashing, not reserved: two branches can, rarely, land on
+the same port. `wool port` fails in a detached worktree.
+
 ## Where the file is read from
 
 wool uses the first file it finds:

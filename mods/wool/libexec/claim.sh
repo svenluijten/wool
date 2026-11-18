@@ -1,6 +1,6 @@
 #!/bin/sh
-# wool-claim.sh <folder> [fresh-minutes]
-# wool-claim.sh <folder> rerun     (wool-trust.sh run: any age, old state cleared)
+# wool claim <folder> [fresh-minutes]
+# wool claim <folder> rerun     (wool rerun: any age, old state cleared)
 # Prints exactly one line:
 #   not-linked                                   not a linked git worktree
 #   stale                                        made more than [fresh-minutes] (3) ago
@@ -28,7 +28,7 @@ fi
 if [ -n "$rerun" ]; then
   if [ -d "$gitdir/wool" ]; then
     if [ "$(sed -n 1p "$gitdir/wool/status" 2>/dev/null)" = running ]; then echo running; exit 0; fi
-    rm -rf "$gitdir/wool" || { echo "wool-claim: can't clear $gitdir/wool" >&2; exit 1; }
+    rm -rf "$gitdir/wool" || { echo "wool claim: can't clear $gitdir/wool" >&2; exit 1; }
   fi
 # git worktree add writes <git-dir>/commondir once; its age is the worktree's.
 elif [ -z "$(find "$gitdir/commondir" -mmin "-$minutes" 2>/dev/null)" ]; then
@@ -38,7 +38,7 @@ fi
 
 if ! mkdir "$gitdir/wool" 2>/dev/null; then
   if [ -d "$gitdir/wool" ]; then echo taken; exit 0; fi
-  echo "wool-claim: can't create $gitdir/wool" >&2
+  echo "wool claim: can't create $gitdir/wool" >&2
   exit 1
 fi
 

@@ -16,24 +16,20 @@ setup:
   - name: Give this worktree its own Compose project and ports
     run: |
       set -e
-      # A port from 10000 to 19999, the same every time for this branch and name.
-      port() {
-        echo $((10000 + $(printf %s "$1-$HERDR_BRANCH" | cksum | cut -d' ' -f1) % 10000))
-      }
       set_env() {
         grep -v "^$1=" .env > .env.wool || true
         printf '%s=%s\n' "$1" "$2" >> .env.wool
         mv .env.wool .env
       }
-      app=$(port app)
+      app=$(wool port)
       set_env COMPOSE_PROJECT_NAME "app-$HERDR_BRANCH_SLUG"
       set_env APP_PORT "$app"
       set_env APP_URL "http://localhost:$app"
-      set_env VITE_PORT "$(port vite)"
-      set_env FORWARD_DB_PORT "$(port db)"
-      set_env FORWARD_REDIS_PORT "$(port redis)"
-      set_env FORWARD_MAILPIT_PORT "$(port mailpit)"
-      set_env FORWARD_MAILPIT_DASHBOARD_PORT "$(port mailpit-ui)"
+      set_env VITE_PORT "$(wool port vite)"
+      set_env FORWARD_DB_PORT "$(wool port db)"
+      set_env FORWARD_REDIS_PORT "$(wool port redis)"
+      set_env FORWARD_MAILPIT_PORT "$(wool port mailpit)"
+      set_env FORWARD_MAILPIT_DASHBOARD_PORT "$(wool port mailpit-ui)"
   - name: Install PHP dependencies
     run: composer install --no-interaction
   - name: Start Sail
