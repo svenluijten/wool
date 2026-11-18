@@ -288,7 +288,10 @@ export default class Wool extends View {
           });
         }
         // The timer covers a watch that never fires (or was rejected).
-        await Promise.race([watchFolder(dir).catch(() => cx.sleep(REQUEST_POLL_MS)), cx.sleep(REQUEST_POLL_MS)]);
+        const watch = watchFolder(dir);
+        await Promise.race([watch.catch(() => cx.sleep(REQUEST_POLL_MS)), cx.sleep(REQUEST_POLL_MS)]);
+        // A watch that lost the race stays pending and counts toward the host task limit.
+        watch.cancel();
       }
     } catch (e) {
       notify({ title: "wool: wool-trust.sh run won't work", body: String(e?.message ?? e), level: "error" });

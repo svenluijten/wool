@@ -159,3 +159,16 @@ test("watchSetup: a failed setup in a tab opens no extra tab", async () => {
   assert.deepEqual(globalThis.herdr.commands, []);
   assert.equal(globalThis.herdr.notes[0].level, "error");
 });
+
+// ---- wool-trust.sh run requests --------------------------------------------
+
+test("watchRequests: a watch that loses to the timer is cancelled", async () => {
+  const t = setup();
+  globalThis.herdr.watches = [];
+  let sleeps = 0;
+  // The timer wins twice, then fails to end the loop.
+  const cx = { ...t.cx, sleep: () => (++sleeps <= 2 ? Promise.resolve() : Promise.reject(new Error("stop"))) };
+  await t.wool.watchRequests(cx);
+  assert.equal(globalThis.herdr.watches.length, 3);
+  assert.deepEqual(globalThis.herdr.watches.slice(0, 2).map((w) => w.cancelled), [true, true]);
+});

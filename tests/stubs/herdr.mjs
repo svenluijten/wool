@@ -12,7 +12,13 @@ export const machines = () => [{ name: null, layout: "ready" }];
 export const knownAgents = async () => [];
 export const appHome = () => h().appHome;
 export const home = () => "/nonexistent-home";
-export const watchFolder = () => new Promise(() => {});
+export function watchFolder() {
+  const watch = new Promise(() => {});
+  watch.cancelled = false;
+  watch.cancel = () => { watch.cancelled = true; };
+  h().watches?.push(watch);
+  return watch;
+}
 export const notify = (n) => h().notes.push(n);
 export function run(name, args) {
   h().commands.push({ name, args });
